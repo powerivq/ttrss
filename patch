@@ -1,0 +1,12 @@
+--- rss.old/classes/rssutils.php
++++ rss/classes/rssutils.php
+@@ -134,8 +134,6 @@
+ 				AND ttrss_user_prefs.profile IS NULL
+ 				AND ttrss_users.id = ttrss_user_prefs.owner_uid
+ 				AND ttrss_user_prefs.pref_name = 'DEFAULT_UPDATE_INTERVAL'
+-				$login_thresh_qpart $update_limit_qpart
+-				$updstart_thresh_qpart
+ 				$query_order $query_limit";
+
+ 		$res = $pdo->query($query);
+
