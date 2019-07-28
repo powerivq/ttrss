@@ -66,6 +66,8 @@
 	// Directory for lockfiles, must be writable to the user you run
 	// daemon process or cronjobs under.
 
+        define('DAEMON_SLEEP_INTERVAL', 60);
+
 	define('CACHE_DIR', '/cache');
 	// Local cache directory for RSS feed content.
 
