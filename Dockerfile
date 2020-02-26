@@ -37,9 +37,10 @@ RUN mv /tt-rss /rss \
     && unzip /tmp/newsplus-plugin.zip -d /tmp \
     && mv /tmp/tt-rss-newsplus-plugin-master/api_newsplus /rss/plugins.local/api_newsplus \
     && rm -rf /tmp/* \
-    && mkdir -p /cache/images /cache/upload /cache/export /cache/js /lock \
-    && chmod -R 777 /cache /lock /rss/feed-icons \
-    && chmod 755 /rss/config.php
+    && mkdir -p /cache/images /cache/upload /cache/export /cache/js /lock /feed-icons \
+    && chmod -R 777 /cache /lock \
+    && chmod 755 /rss/config.php \
+    && ln -s /rss/feed-icons /feed-icons
 
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 WORKDIR /rss
