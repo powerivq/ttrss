@@ -36,11 +36,11 @@ RUN mv /tt-rss /rss \
     && mv /tmp/tinytinyrss-fever-plugin-master /rss/plugins.local/fever \
     && unzip /tmp/newsplus-plugin.zip -d /tmp \
     && mv /tmp/tt-rss-newsplus-plugin-master/api_newsplus /rss/plugins.local/api_newsplus \
-    && rm -rf /tmp/* \
+    && rm -rf /tmp/* /rss/feed-icons \
     && mkdir -p /cache/images /cache/upload /cache/export /cache/js /lock /feed-icons \
     && chmod -R 777 /cache /lock \
     && chmod 755 /rss/config.php \
-    && ln -s /rss/feed-icons /feed-icons
+    && ln -s /feed-icons /rss/feed-icons
 
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 WORKDIR /rss
