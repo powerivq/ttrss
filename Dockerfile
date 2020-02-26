@@ -1,4 +1,4 @@
-FROM php:7.2.10-fpm-alpine
+FROM php:7-fpm-alpine
 
 RUN apk add --update --no-cache --virtual .build-deps curl-dev libxml2-dev libressl-dev pcre-dev \
     && apk add --update --no-cache bzip2-dev freetype-dev gettext-dev icu-dev libjpeg-turbo-dev libpng-dev supervisor \
@@ -9,12 +9,12 @@ RUN apk add --update --no-cache --virtual .build-deps curl-dev libxml2-dev libre
 COPY php-custom.ini /usr/local/etc/php/conf.d/
 
 # https://git.tt-rss.org/fox/tt-rss
-# 20190715
+# 20200224
 ADD ttrss.tar.gz /
 COPY patch /tmp/patch
 
 # https://github.com/levito/tt-rss-feedly-theme
-# 20190705
+# 20200222
 COPY theme.zip /tmp/
 
 # https://github.com/DigitalDJ/tinytinyrss-fever-plugin
