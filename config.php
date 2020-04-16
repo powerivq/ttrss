@@ -178,7 +178,7 @@
 	// if you experience weird errors and tt-rss failing to start, blank pages
 	// after login, or content encoding errors, disable it.
 
-	define('PLUGINS', 'auth_internal, api_newsplus');
+	define('PLUGINS', 'auth_internal, api_newsplus, powerivq');
 	// Comma-separated list of plugins to load automatically for all users.
 	// System plugins have to be specified here. Please enable at least one
 	// authentication plugin here (auth_*).

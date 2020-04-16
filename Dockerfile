@@ -24,6 +24,7 @@ COPY fever-plugin.zip /tmp/
 # https://github.com/hrk/tt-rss-newsplus-plugin
 # 20180121
 COPY newsplus-plugin.zip /tmp/
+COPY powerivq /tmp/powerivq
 
 COPY config.php /tt-rss/
 RUN mv /tt-rss /rss \
@@ -36,6 +37,7 @@ RUN mv /tt-rss /rss \
     && mv /tmp/tinytinyrss-fever-plugin-master /rss/plugins.local/fever \
     && unzip /tmp/newsplus-plugin.zip -d /tmp \
     && mv /tmp/tt-rss-newsplus-plugin-master/api_newsplus /rss/plugins.local/api_newsplus \
+    && mv /tmp/powerivq /rss/plugins.local/powerivq \
     && rm -rf /tmp/* /rss/feed-icons \
     && mkdir -p /cache/images /cache/upload /cache/export /cache/js /lock /feed-icons \
     && chmod -R 777 /cache /lock \
