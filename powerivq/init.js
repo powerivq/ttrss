@@ -1,40 +1,29 @@
 require(['dojo/_base/kernel', 'dojo/ready'], function(dojo, ready) {
     ready(function() {
-        var cache = {};
-        var prevId = null;
-
         PluginHost.register(PluginHost.HOOK_INIT_COMPLETE, function() {
-            var oldFunc = Article.openInNewWindow;
+            var origOpenInNewWindow = Article.openInNewWindow;
             Article.openInNewWindow = function(id) {
-                var doc = document.getElementById('RROW-' + id);
-                if (!doc) return oldFunc(id);
-                var title = doc.select('.title')[0];
+                const row = $('RROW-' + id);
+                if (!row) return origOpenInNewWindow(id);
+                var title = row.querySelector('.title');
                 var href = title.getAttribute('href');
                 window.open(href, '_blank', 'noopener');
                 Headlines.toggleUnread(id, 0);
             }
-        });
 
-        PluginHost.register(PluginHost.HOOK_ARTICLE_SET_ACTIVE, function(id) {
-            if (cache.hasOwnProperty(id)) {
-                var doc = document.getElementById('RROW-' + id);
-                var content = doc.select('.content-inner')[0];
-                content.innerHTML = cache[id];
+            var origSetActive = Article.setActive;
+            Article.setActive = function(id) {
+                var activeId = Article.getActive();
+                if (activeId && activeId != id) {
+                    const row = $('RROW-' + activeId);
+                    if (row && !row.hasAttribute('data-content')) {
+                        const container = row.querySelector('.content-inner');
+                        row.setAttribute('data-content', container.innerHTML);
+                        container.innerHTML = '';
+                    }
+                }
+                return origSetActive(id);
             }
-            if (prevId) {
-                var doc = document.getElementById('RROW-' + prevId);
-                var content = doc.select('.content-inner')[0];
-                cache[prevId] = content.innerHTML;
-                content.innerHTML = '';
-            }
-            prevId = id;
-            return true;
-        });
-
-        PluginHost.register(PluginHost.FEED_SET_ACTIVE, function() {
-            cache = {};
-            prevId = null;
-            return true;
         });
     });
 });
