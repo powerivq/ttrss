@@ -4,8 +4,10 @@ require(['dojo/_base/kernel', 'dojo/ready'], function(dojo, ready) {
         var prevId = null;
 
         PluginHost.register(PluginHost.HOOK_INIT_COMPLETE, function() {
+            var oldFunc = Article.openInNewWindow;
             Article.openInNewWindow = function(id) {
                 var doc = document.getElementById('RROW-' + id);
+                if (!doc) return oldFunc(id);
                 var title = doc.select('.title')[0];
                 var href = title.getAttribute('href');
                 window.open(href, '_blank', 'noopener');
