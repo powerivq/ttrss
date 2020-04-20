@@ -20,5 +20,4 @@ class PowerIVQ extends Plugin {
     function api_version() {
         return 2;
     }
-
 }
