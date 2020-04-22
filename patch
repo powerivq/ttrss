@@ -45,11 +45,3 @@ diff -Naur rss.old/classes/rssutils.php rss/classes/rssutils.php
  			ORDER BY ttrss_feeds.id $query_limit");
  
  		foreach ($feeds_to_update as $feed) {
-@@ -1504,7 +1491,6 @@
- 		RSSUtils::expire_feed_archive();
- 		RSSUtils::cleanup_feed_browser();
- 
--		Article::purge_orphans();
- 		RSSUtils::cleanup_counters_cache();
- 
- 		PluginHost::getInstance()->run_hooks(PluginHost::HOOK_HOUSE_KEEPING, "hook_house_keeping", "");

@@ -4,8 +4,8 @@ class PowerIVQ extends Plugin {
 
     function about() {
         return array(1.0,
-            "Customizations for powerivq",
-            "powerivq",
+            'Customizations for powerivq',
+            'powerivq',
             false);
     }
 
@@ -14,7 +14,7 @@ class PowerIVQ extends Plugin {
     }
 
     function get_js() {
-        return file_get_contents(dirname(__FILE__) . "/init.js");
+        return file_get_contents(dirname(__FILE__) . '/init.js');
     }
 
     function api_version() {
