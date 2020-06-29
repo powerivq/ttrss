@@ -29,7 +29,9 @@ COPY powerivq /tmp/powerivq
 COPY config.php /tt-rss/
 RUN mv /tt-rss /rss \
     && cd /rss \
+    && apk add --no-cache patch \
     && patch -p1 -i /tmp/patch \
+    && apk del --no-cache patch \
     && unzip /tmp/theme.zip -d /tmp \
     && mv /tmp/tt-rss-feedly-theme-master/*.css /rss/themes/ \
     && mv /tmp/tt-rss-feedly-theme-master/feedly /rss/themes/ \
