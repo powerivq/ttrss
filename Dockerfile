@@ -40,7 +40,7 @@ RUN mv /tt-rss /rss \
     && unzip /tmp/newsplus-plugin.zip -d /tmp \
     && mv /tmp/tt-rss-newsplus-plugin-master/api_newsplus /rss/plugins.local/api_newsplus \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
-    && wget -qO- https://github.com/powerivq/ttrss-pusher/releases/download/1.0.4/release-1.0.4.zip | unzip - \
+    && wget -qO- https://github.com/powerivq/ttrss-pusher/releases/download/1.0.5/release-1.0.5.zip | unzip - \
     && mv pusher plugins.local/ \
     && rm -rf /tmp/* /rss/feed-icons \
     && mkdir -p /cache/images /cache/upload /cache/export /cache/js /lock /feed-icons \
