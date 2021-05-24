@@ -11,7 +11,7 @@ diff -Naur rss.old/classes/pref/feeds.php rss/classes/pref/feeds.php
  				</div>
 diff -Naur rss.old/classes/rssutils.php rss/classes/rssutils.php
 --- rss.old/classes/rssutils.php	2021-05-21 07:10:32.000000000 -0700
-+++ rss/classes/rssutils.php	2021-05-23 18:51:58.890000000 -0700
++++ rss/classes/rssutils.php	2021-05-23 20:17:31.260000000 -0700
 @@ -120,13 +120,7 @@
  
  		$query = "SELECT f.feed_url, f.last_updated
@@ -27,3 +27,11 @@ diff -Naur rss.old/classes/rssutils.php rss/classes/rssutils.php
  				$query_order $query_limit";
  
  		//print "$query\n";
+@@ -166,7 +160,6 @@
+ 				f.owner_uid = u.id
+ 				AND feed_url = :feed
+ 				$login_thresh_qpart
+-				$update_limit_qpart
+ 			ORDER BY f.id $query_limit";
+ 
+ 		//print "$user_query\n";
