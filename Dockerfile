@@ -9,20 +9,20 @@ RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-d
 COPY php-custom.ini /usr/local/etc/php/conf.d/
 
 # https://git.tt-rss.org/fox/tt-rss
-# 20200224
+# 20210523
 ADD ttrss.tar.gz /
 COPY patch /tmp/patch
 
 # https://github.com/levito/tt-rss-feedly-theme
-# 20200222
+# 20210523
 COPY theme.zip /tmp/
 
 # https://github.com/DigitalDJ/tinytinyrss-fever-plugin
-# 20180527
+# 20210523
 COPY fever-plugin.zip /tmp/
 
 # https://github.com/hrk/tt-rss-newsplus-plugin
-# 20180121
+# 20210523
 COPY newsplus-plugin.zip /tmp/
 COPY powerivq /tmp/powerivq
 
@@ -40,7 +40,7 @@ RUN mv /tt-rss /rss \
     && unzip /tmp/newsplus-plugin.zip -d /tmp \
     && mv /tmp/tt-rss-newsplus-plugin-master/api_newsplus /rss/plugins.local/api_newsplus \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
-    && wget -qO- https://github.com/powerivq/ttrss-pusher/releases/download/1.0.5/release-1.0.5.zip | unzip - \
+    && wget -qO- https://github.com/powerivq/ttrss-pusher/releases/download/1.0.7/release.zip | unzip - \
     && mv pusher plugins.local/ \
     && rm -rf /tmp/* /rss/feed-icons \
     && mkdir -p /cache/images /cache/upload /cache/export /cache/js /lock /feed-icons \

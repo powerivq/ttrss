@@ -1,55 +1,29 @@
 diff -Naur rss.old/classes/pref/feeds.php rss/classes/pref/feeds.php
---- rss.old/classes/pref/feeds.php	2019-07-28 15:43:21.805644893 -0700
-+++ rss/classes/pref/feeds.php	2019-07-28 15:44:19.289520187 -0700
-@@ -1293,8 +1293,6 @@
- 		</script>
- 		<script type=\"dojo/method\" event=\"onLoad\" args=\"item\">
- 			Element.hide(\"feedlistLoading\");
--
--			dijit.byId('feedTree').checkInactiveFeeds();
- 		</script>
- 		</div>";
- 
+--- rss.old/classes/pref/feeds.php	2021-05-21 07:10:32.000000000 -0700
++++ rss/classes/pref/feeds.php	2021-05-23 18:15:09.130000000 -0700
+@@ -970,7 +970,6 @@
+ 						}
+ 					</script>
+ 					<script type="dojo/method" event="onLoad" args="item">
+-						dijit.byId('feedTree').checkInactiveFeeds();
+ 						dijit.byId('feedTree').checkErrorFeeds();
+ 					</script>
+ 				</div>
 diff -Naur rss.old/classes/rssutils.php rss/classes/rssutils.php
---- rss.old/classes/rssutils.php	2019-07-26 19:45:26.777399603 -0700
-+++ rss/classes/rssutils.php	2019-07-26 23:11:10.151428045 -0700
-@@ -84,14 +84,7 @@
+--- rss.old/classes/rssutils.php	2021-05-21 07:10:32.000000000 -0700
++++ rss/classes/rssutils.php	2021-05-23 18:51:58.890000000 -0700
+@@ -120,13 +120,7 @@
  
- 		$query = "SELECT DISTINCT ttrss_feeds.feed_url, ttrss_feeds.last_updated
+ 		$query = "SELECT f.feed_url, f.last_updated
  			FROM
--				ttrss_feeds, ttrss_users, ttrss_user_prefs
+-				ttrss_feeds f, ttrss_users u LEFT JOIN ttrss_user_prefs2 p ON
+-					(p.owner_uid = u.id AND profile IS NULL AND pref_name = 'DEFAULT_UPDATE_INTERVAL')
 -			WHERE
--				ttrss_feeds.owner_uid = ttrss_users.id
--				AND ttrss_user_prefs.profile IS NULL
--				AND ttrss_users.id = ttrss_user_prefs.owner_uid
--				AND ttrss_user_prefs.pref_name = 'DEFAULT_UPDATE_INTERVAL'
--				$login_thresh_qpart $update_limit_qpart
+-				f.owner_uid = u.id
+-				$login_thresh_qpart
+-				$update_limit_qpart
 -				$updstart_thresh_qpart
-+				ttrss_feeds
++				ttrss_feeds f
  				$query_order $query_limit";
  
- 		$res = $pdo->query($query);
-@@ -120,14 +113,8 @@
- 
- 		// since we have the data cached, we can deal with other feeds with the same url
- 		$usth = $pdo->prepare("SELECT DISTINCT ttrss_feeds.id,last_updated,ttrss_feeds.owner_uid
--			FROM ttrss_feeds, ttrss_users, ttrss_user_prefs WHERE
--				ttrss_user_prefs.owner_uid = ttrss_feeds.owner_uid AND
--				ttrss_users.id = ttrss_user_prefs.owner_uid AND
--				ttrss_user_prefs.pref_name = 'DEFAULT_UPDATE_INTERVAL' AND
--				ttrss_user_prefs.profile IS NULL AND
-+			FROM ttrss_feeds WHERE
- 				feed_url = ?
--				$update_limit_qpart
--				$login_thresh_qpart
- 			ORDER BY ttrss_feeds.id $query_limit");
- 
- 		foreach ($feeds_to_update as $feed) {
-@@ -1504,7 +1491,6 @@
- 		RSSUtils::expire_feed_archive();
- 		RSSUtils::cleanup_feed_browser();
- 
--		Article::purge_orphans();
- 		RSSUtils::cleanup_counters_cache();
- 
- 		PluginHost::getInstance()->run_hooks(PluginHost::HOOK_HOUSE_KEEPING, "hook_house_keeping", "");
+ 		//print "$query\n";
