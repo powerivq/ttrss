@@ -25,6 +25,7 @@ COPY fever-plugin.zip /tmp/
 # 20210523
 COPY newsplus-plugin.zip /tmp/
 COPY powerivq /tmp/powerivq
+COPY af_proxy_http /tmp/af_proxy_http
 
 COPY config.php /tt-rss/
 RUN mv /tt-rss /rss \
@@ -40,7 +41,8 @@ RUN mv /tt-rss /rss \
     && unzip /tmp/newsplus-plugin.zip -d /tmp \
     && mv /tmp/tt-rss-newsplus-plugin-master/api_newsplus /rss/plugins.local/api_newsplus \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
-    && wget -qO- https://github.com/powerivq/ttrss-pusher/releases/download/1.0.7/release.zip | unzip - \
+    && mv /tmp/af_proxy_http /rss/plugins.local/af_proxy_http \
+    && wget -qO- https://github.com/powerivq/ttrss-pusher/releases/download/1.0.8/release.zip | unzip - \
     && mv pusher plugins.local/ \
     && rm -rf /tmp/* /rss/feed-icons \
     && mkdir -p /cache/images /cache/upload /cache/export /cache/js /lock /feed-icons \
