@@ -65,7 +65,7 @@
 	// Directory for lockfiles, must be writable to the user you run
 	// daemon process or cronjobs under.
 
-    putenv('TTRSS_DAEMON_SLEEP_INTERVAL=60');
+	putenv('TTRSS_DAEMON_SLEEP_INTERVAL=60');
 
 	putenv('TTRSS_CACHE_DIR=/cache');
 	// Local cache directory for RSS feed content.
@@ -123,7 +123,7 @@
 	// if you experience weird errors and tt-rss failing to start, blank pages
 	// after login, or content encoding errors, disable it.
 
-	putenv('TTRSS_PLUGINS=auth_internal, api_newsplus, powerivq, pusher');
+	putenv('TTRSS_PLUGINS=auth_internal, af_proxy_http, api_newsplus, powerivq, pusher');
 	// Comma-separated list of plugins to load automatically for all users.
 	// System plugins have to be specified here. Please enable at least one
 	// authentication plugin here (auth_*).
