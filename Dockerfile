@@ -1,9 +1,9 @@
 FROM php:7-fpm-alpine
 
 RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-dev libressl-dev pcre-dev \
-    && apk add --update --no-cache gmp bzip2-dev freetype-dev gettext-dev gnu-libiconv icu-dev libjpeg-turbo-dev libpng-dev oniguruma-dev supervisor \
+    && apk add --update --no-cache gmp bzip2-dev freetype-dev gettext-dev icu-dev libjpeg-turbo-dev libpng-dev oniguruma-dev supervisor \
     && docker-php-ext-configure gd --with-freetype=/usr/include/ --with-jpeg=/usr/include \
-    && docker-php-ext-install bz2 curl dom gd gmp gettext mbstring opcache iconv intl mysqli opcache pcntl pdo pdo_mysql phar posix xml xmlrpc \
+    && docker-php-ext-install bz2 curl dom gd gmp gettext mbstring opcache intl mysqli opcache pcntl pdo pdo_mysql phar posix xml xmlrpc \
     && apk del --no-cache .build-deps
 
 COPY php-custom.ini /usr/local/etc/php/conf.d/
