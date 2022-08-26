@@ -42,7 +42,9 @@ RUN mv /tt-rss /rss \
     && mv /tmp/tt-rss-newsplus-plugin-master/api_newsplus /rss/plugins.local/api_newsplus \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
     && mv /tmp/af_proxy_http /rss/plugins.local/af_proxy_http \
-    && wget -qO- https://github.com/powerivq/ttrss-pusher/releases/download/1.0.9/bundle.zip | unzip - \
+    && mkdir pusher && cd pusher \
+    && wget https://github.com/powerivq/ttrss-pusher/releases/download/1.0.9/release.zip \
+    && unzip release.zip && rm release.zip && cd .. \
     && mv pusher plugins.local/ \
     && rm -rf /tmp/* /rss/feed-icons \
     && mkdir -p /cache/images /cache/upload /cache/export /cache/js /lock /feed-icons \
