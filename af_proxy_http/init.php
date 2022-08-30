@@ -33,7 +33,7 @@ class Af_Proxy_Http extends Plugin {
 			$_SESSION['af_proxy_http_token'] = bin2hex(get_random_bytes(16));
 	}
 
-	function hook_enclosure_entry($enc) {
+	function hook_enclosure_entry($enc, $id, $rv) {
 		if (preg_match("/image/", $enc["content_type"])) {
 			$proxy_all = $this->host->get($this, "proxy_all");
 

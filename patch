@@ -1,3 +1,15 @@
+diff --git a/classes/logger/sql.php b/classes/logger/sql.php
+index 5f3c67852..d489e9996 100755
+--- a/classes/logger/sql.php
++++ b/classes/logger/sql.php
+@@ -11,6 +11,7 @@ class Logger_SQL implements Logger_Adapter {
+ 	}
+ 
+ 	function log_error(int $errno, string $errstr, string $file, int $line, string $context): bool {
++		if (stroid($errstr, 'imagecreatefromstring()') === 0) return false;
+ 
+ 		if (Config::get_schema_version() > 117) {
+ 
 diff --git a/classes/rssutils.php b/classes/rssutils.php
 index fe295417a..8fa7f1836 100755
 --- a/classes/rssutils.php

@@ -9,20 +9,20 @@ RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-d
 COPY php-custom.ini /usr/local/etc/php/conf.d/
 
 # https://git.tt-rss.org/fox/tt-rss
-# 20210523
+# 20220830
 ADD ttrss.tar.gz /
 COPY patch /tmp/patch
 
 # https://github.com/levito/tt-rss-feedly-theme
-# 20210523
+# 20220830
 COPY theme.zip /tmp/
 
 # https://github.com/DigitalDJ/tinytinyrss-fever-plugin
-# 20210523
+# 20220830
 COPY fever-plugin.zip /tmp/
 
 # https://github.com/hrk/tt-rss-newsplus-plugin
-# 20210523
+# 20220830
 COPY newsplus-plugin.zip /tmp/
 COPY powerivq /tmp/powerivq
 COPY af_proxy_http /tmp/af_proxy_http
