@@ -1,25 +1,16 @@
-diff -Naur rss.old/classes/pref/feeds.php rss/classes/pref/feeds.php
---- rss.old/classes/pref/feeds.php	2021-05-21 07:10:32.000000000 -0700
-+++ rss/classes/pref/feeds.php	2021-05-23 18:15:09.130000000 -0700
-@@ -970,7 +970,6 @@
- 						}
- 					</script>
- 					<script type="dojo/method" event="onLoad" args="item">
--						dijit.byId('feedTree').checkInactiveFeeds();
- 						dijit.byId('feedTree').checkErrorFeeds();
- 					</script>
- 				</div>
-diff -Naur rss.old/classes/rssutils.php rss/classes/rssutils.php
---- rss.old/classes/rssutils.php	2021-05-21 07:10:32.000000000 -0700
-+++ rss/classes/rssutils.php	2021-05-23 20:17:31.260000000 -0700
-@@ -120,13 +120,7 @@
+diff --git a/classes/rssutils.php b/classes/rssutils.php
+index fe295417a..8fa7f1836 100755
+--- a/classes/rssutils.php
++++ b/classes/rssutils.php
+@@ -126,14 +126,7 @@ class RSSUtils {
  
  		$query = "SELECT f.feed_url, f.last_updated
  			FROM
 -				ttrss_feeds f, ttrss_users u LEFT JOIN ttrss_user_prefs2 p ON
 -					(p.owner_uid = u.id AND profile IS NULL AND pref_name = 'DEFAULT_UPDATE_INTERVAL')
 -			WHERE
--				f.owner_uid = u.id
+-				f.owner_uid = u.id AND
+-				u.access_level NOT IN (".sprintf("%d, %d", UserHelper::ACCESS_LEVEL_DISABLED, UserHelper::ACCESS_LEVEL_READONLY).")
 -				$login_thresh_qpart
 -				$update_limit_qpart
 -				$updstart_thresh_qpart
@@ -27,11 +18,23 @@ diff -Naur rss.old/classes/rssutils.php rss/classes/rssutils.php
  				$query_order $query_limit";
  
  		//print "$query\n";
-@@ -166,7 +160,6 @@
- 				f.owner_uid = u.id
+@@ -174,7 +167,6 @@ class RSSUtils {
+ 				u.access_level NOT IN (".sprintf("%d, %d", UserHelper::ACCESS_LEVEL_DISABLED, UserHelper::ACCESS_LEVEL_READONLY).")
  				AND feed_url = :feed
  				$login_thresh_qpart
 -				$update_limit_qpart
  			ORDER BY f.id $query_limit";
  
  		//print "$user_query\n";
+diff --git a/js/PrefFeedTree.js b/js/PrefFeedTree.js
+index 85b262b6d..c4c1c1995 100644
+--- a/js/PrefFeedTree.js
++++ b/js/PrefFeedTree.js
+@@ -11,7 +11,6 @@ define(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree", "dojo/_b
+ 			const tmph = dojo.connect(this, 'onLoad', () => {
+ 				dojo.disconnect(tmph);
+ 
+-				this.checkInactiveFeeds();
+ 				this.checkErrorFeeds();
+ 			});
+ 
