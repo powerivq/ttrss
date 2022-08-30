@@ -1,4 +1,4 @@
-FROM php:7-fpm-alpine
+FROM php:8-fpm-alpine
 
 RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-dev libressl-dev pcre-dev \
     && apk add --update --no-cache gmp bzip2-dev freetype-dev gettext-dev icu-dev libjpeg-turbo-dev libpng-dev oniguruma-dev supervisor \
@@ -43,7 +43,7 @@ RUN mv /tt-rss /rss \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
     && mv /tmp/af_proxy_http /rss/plugins.local/af_proxy_http \
     && mkdir pusher && cd pusher \
-    && wget https://github.com/powerivq/ttrss-pusher/releases/download/1.0.10/release.zip \
+    && wget https://github.com/powerivq/ttrss-pusher/releases/download/1.0.11/release.zip \
     && unzip release.zip && rm release.zip && cd .. \
     && mv pusher plugins.local/ \
     && rm -rf /tmp/* /rss/feed-icons \
