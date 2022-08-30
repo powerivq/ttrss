@@ -6,7 +6,7 @@ index 5f3c67852..d489e9996 100755
  	}
  
  	function log_error(int $errno, string $errstr, string $file, int $line, string $context): bool {
-+		if (stroid($errstr, 'imagecreatefromstring()') === 0) return false;
++		if (strpos($errstr, 'imagecreatefromstring()') === 0) return false;
  
  		if (Config::get_schema_version() > 117) {
  
