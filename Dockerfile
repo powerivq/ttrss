@@ -43,7 +43,7 @@ RUN mv /tt-rss /rss \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
     && mv /tmp/af_proxy_http /rss/plugins.local/af_proxy_http \
     && mkdir pusher && cd pusher \
-    && wget https://github.com/powerivq/ttrss-pusher/releases/download/1.0.9/release.zip \
+    && wget https://github.com/powerivq/ttrss-pusher/releases/download/1.0.10/release.zip \
     && unzip release.zip && rm release.zip && cd .. \
     && mv pusher plugins.local/ \
     && rm -rf /tmp/* /rss/feed-icons \
