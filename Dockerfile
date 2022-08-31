@@ -9,7 +9,8 @@ RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-d
 COPY php-custom.ini /usr/local/etc/php/conf.d/
 
 # https://git.tt-rss.org/fox/tt-rss
-# 20220830
+# tar --exclude='tt-rss/.git*' -czvf ttrss.tar.gz tt-rss/
+# 20220831
 ADD ttrss.tar.gz /
 COPY patch /tmp/patch
 
