@@ -58,7 +58,7 @@ class Af_Proxy_Http extends Plugin {
 			strpos($url, get_self_url_prefix()) === 0 ||
 			empty($_SESSION["uid"]) ||
 			isset($_SESSION['af_proxy_http_token']) &&
-			$_REQUEST['af_proxy_http_token'] != $_SESSION['af_proxy_http_token']) {
+			($_REQUEST['af_proxy_http_token'] ?? null) != $_SESSION['af_proxy_http_token']) {
 			header("Location: $url");
 			return;
 		}
