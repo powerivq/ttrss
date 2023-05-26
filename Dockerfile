@@ -1,6 +1,7 @@
 FROM php:8-fpm-alpine
 
-ENV CI_COMMIT_SHORT_SHA=00000
+ENV CI_COMMIT_SHORT_SHA=1
+ENV CI_COMMIT_TIMESTAMP=1
 
 RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-dev pcre-dev \
     && apk add --update --no-cache gmp bzip2-dev freetype-dev gettext-dev icu-dev libjpeg-turbo-dev libpng-dev oniguruma-dev supervisor \
