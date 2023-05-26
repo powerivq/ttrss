@@ -17,6 +17,22 @@ require(['dojo/_base/kernel', 'dojo/ready'], function(dojo, ready) {
                 move.bind(this)(mode, params);
             }
         });
+
+        PluginHost.register(
+            PluginHost.HOOK_ARTICLE_RENDERED_CDM,
+		    function (doc) {
+                var inner = doc.querySelector('div.content-inner');
+                if ([...inner.childNodes].map(x=>x.tagName).join(',') == 'DIV,BR,HR,BR,DIV'
+                    && inner.firstChild.childNodes.length
+                    && inner.firstChild.firstChild.outerHTML == '<h2>SUMMARY</h2>') {
+                    var content = inner.lastChild;
+                    var results = [...content.childNodes].map(x => x.nodeName == '#text' ? x.textContent : "\n");
+                    var pre = document.createElement('pre');
+                    pre.textContent = results.join('');
+                    inner.replaceChild(pre, content);
+                }
+                return true;
+            });
     });
 });
 
