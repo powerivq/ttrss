@@ -25,11 +25,9 @@ require(['dojo/_base/kernel', 'dojo/ready'], function(dojo, ready) {
                 if ([...inner.childNodes].map(x=>x.tagName).join(',') == 'DIV,BR,HR,BR,DIV'
                     && inner.firstChild.childNodes.length
                     && inner.firstChild.firstChild.outerHTML == '<h2>SUMMARY</h2>') {
-                    var content = inner.lastChild;
-                    var results = [...content.childNodes].map(x => x.nodeName == '#text' ? x.textContent : "\n");
                     var pre = document.createElement('pre');
-                    pre.textContent = results.join('');
-                    inner.replaceChild(pre, content);
+                    pre.innerHTML = inner.lastChild.innerHTML;
+                    inner.replaceChild(pre, inner.lastChild);
                 }
                 return true;
             });
