@@ -70,8 +70,7 @@
 	putenv('TTRSS_CACHE_DIR=/cache');
 	// Local cache directory for RSS feed content.
 
-	putenv('TTRSS_ICONS_DIR=feed-icons');
-	putenv('TTRSS_ICONS_URL=feed-icons');
+	putenv('TTRSS_ICONS_DIR=/cache/feed-icons');
 	// Local and URL path to the directory, where feed favicons are stored.
 	// Unless you really know what you're doing, please keep those relative
 	// to tt-rss main directory.
