@@ -131,7 +131,7 @@
 	// Disabling auth_internal in this list would automatically disable
 	// reset password link on the login form.
 	
-	putenv('TTRSS_LOG_DESTINATION=sql');
+	putenv('TTRSS_LOG_DESTINATION=');
 	// Error log destination to use. Possible values: sql (uses internal logging
 	// you can read in Preferences -> System), syslog - logs to system log.
 	// Setting this to blank uses PHP logging (usually to http server 
@@ -140,3 +140,5 @@
 	// for normal output.
 
 	// vim:ft=php
+
+	putenv('DAEMON_UPDATE_LOGIN_LIMIT=0');

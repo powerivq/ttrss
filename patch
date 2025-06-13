@@ -1,52 +1,20 @@
-diff --git a/classes/logger/sql.php b/classes/logger/sql.php
-index 5f3c67852..d489e9996 100755
---- a/classes/logger/sql.php
-+++ b/classes/logger/sql.php
-@@ -11,6 +11,7 @@ class Logger_SQL implements Logger_Adapter {
- 	}
+diff --git a/backend.php b/backend.php
+index 860a3940c..d9ad398bf 100644
+--- a/backend.php
++++ b/backend.php
+@@ -69,6 +69,7 @@
+ 	$update_intervals = array(
+ 		0   => __("Default interval"),
+ 		-1  => __("Disable updates"),
++		1   => "每1分鐘",
+ 		15  => __("15 minutes"),
+ 		30  => __("30 minutes"),
+ 		60  => __("Hourly"),
+@@ -79,6 +80,7 @@
  
- 	function log_error(int $errno, string $errstr, string $file, int $line, string $context): bool {
-+		if (strpos($errstr, 'imagecreatefromstring()') === 0) return false;
- 
- 		if (Config::get_schema_version() > 117) {
- 
-diff --git a/classes/rssutils.php b/classes/rssutils.php
-index fe295417a..8fa7f1836 100755
---- a/classes/rssutils.php
-+++ b/classes/rssutils.php
-@@ -126,14 +126,7 @@ class RSSUtils {
- 
- 		$query = "SELECT f.feed_url, f.last_updated
- 			FROM
--				ttrss_feeds f, ttrss_users u LEFT JOIN ttrss_user_prefs2 p ON
--					(p.owner_uid = u.id AND profile IS NULL AND pref_name = 'DEFAULT_UPDATE_INTERVAL')
--			WHERE
--				f.owner_uid = u.id AND
--				u.access_level NOT IN (".sprintf("%d, %d", UserHelper::ACCESS_LEVEL_DISABLED, UserHelper::ACCESS_LEVEL_READONLY).")
--				$login_thresh_qpart
--				$update_limit_qpart
--				$updstart_thresh_qpart
-+				ttrss_feeds f
- 				$query_order $query_limit";
- 
- 		//print "$query\n";
-@@ -174,7 +167,6 @@ class RSSUtils {
- 				u.access_level NOT IN (".sprintf("%d, %d", UserHelper::ACCESS_LEVEL_DISABLED, UserHelper::ACCESS_LEVEL_READONLY).")
- 				AND feed_url = :feed
- 				$login_thresh_qpart
--				$update_limit_qpart
- 			ORDER BY f.id $query_limit";
- 
- 		//print "$user_query\n";
-diff --git a/js/PrefFeedTree.js b/js/PrefFeedTree.js
-index 85b262b6d..c4c1c1995 100644
---- a/js/PrefFeedTree.js
-+++ b/js/PrefFeedTree.js
-@@ -11,7 +11,6 @@ define(["dojo/_base/declare", "dojo/dom-construct", "lib/CheckBoxTree", "dojo/_b
- 			const tmph = dojo.connect(this, 'onLoad', () => {
- 				dojo.disconnect(tmph);
- 
--				this.checkInactiveFeeds();
- 				this.checkErrorFeeds();
- 			});
- 
+ 	$update_intervals_nodefault = array(
+ 		-1  => __("Disable updates"),
++		1   => "每1分鐘",
+ 		15  => __("15 minutes"),
+ 		30  => __("30 minutes"),
+ 		60  => __("Hourly"),
