@@ -3,10 +3,11 @@ FROM php:8-fpm-alpine
 ENV CI_COMMIT_SHORT_SHA=1
 ENV CI_COMMIT_TIMESTAMP=1
 
-RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-dev pcre-dev \
+RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-dev pcre-dev postgresql-dev \
     && apk add --update --no-cache gmp bzip2-dev freetype-dev gettext-dev icu-dev libjpeg-turbo-dev libpng-dev oniguruma-dev supervisor \
     && docker-php-ext-configure gd --with-freetype=/usr/include/ --with-jpeg=/usr/include \
-    && docker-php-ext-install bz2 curl dom gd gmp gettext mbstring opcache intl mysqli opcache pcntl pdo pdo_mysql posix xml \
+    && docker-php-ext-configure pdo_pgsql \
+    && docker-php-ext-install bz2 curl dom gd gmp gettext mbstring opcache intl mysqli opcache pcntl pdo posix xml \
     && apk del --no-cache .build-deps
 
 COPY php-custom.ini /usr/local/etc/php/conf.d/
@@ -47,7 +48,7 @@ RUN mv /tt-rss /rss \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
     && mv /tmp/af_proxy_http /rss/plugins.local/af_proxy_http \
     && mkdir pusher && cd pusher \
-    && wget https://github.com/powerivq/ttrss-pusher/releases/download/1.0.12/release.zip \
+    && wget https://github.com/powerivq/ttrss-pusher/releases/download/2.0.0/release.zip \
     && unzip release.zip && rm release.zip && cd .. \
     && mv pusher plugins.local/ \
     && rm -rf /tmp/* /rss/feed-icons \

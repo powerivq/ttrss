@@ -1,28 +1,7 @@
 <?php
-	// *******************************************
-	// *** Database configuration (important!) ***
-	// *******************************************
-
-	putenv('TTRSS_DB_TYPE=mysql');
-	putenv('TTRSS_DB_HOST=mysql');
-	putenv('TTRSS_DB_USER=ttrss');
-	putenv('TTRSS_DB_NAME=ttrss');
-	putenv('TTRSS_DB_PASS=ttrss');
-	putenv('TTRSS_DB_PORT=3306');
-
-	putenv('TTRSS_MYSQL_CHARSET=UTF8');
-	// Connection charset for MySQL. If you have a legacy database and/or experience
-	// garbage unicode characters with this option, try setting it to a blank string.
-
 	// ***********************************
 	// *** Basic settings (important!) ***
 	// ***********************************
-
-	putenv('TTRSS_SELF_URL_PATH=https://rss.seward.im/');
-	// Full URL of your tt-rss installation. This should be set to the
-	// location of tt-rss directory, e.g. http://example.org/tt-rss/
-	// You need to set this option correctly otherwise several features
-	// including PUSH, bookmarklets and browser integration will not work properly.
 
 	putenv('TTRSS_FEED_CRYPT_KEY=');
 	// WARNING: mcrypt is deprecated in php 7.1. This directive exists for backwards
