@@ -1,9 +1,11 @@
-name: Build on main branch push
+name: Build and push Docker container
 
 on:
   push:
     branches:
       - main
+  schedule:
+    - cron: '35 12 1 * *'
 
 jobs:
   build:
