@@ -3,8 +3,8 @@ FROM php:8-fpm-alpine
 ENV CI_COMMIT_SHORT_SHA=1
 ENV CI_COMMIT_TIMESTAMP=1
 
-RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-dev pcre-dev postgresql-dev \
-    && apk add --update --no-cache gmp bzip2-dev freetype-dev gettext-dev icu-dev libjpeg-turbo-dev libpng-dev oniguruma-dev supervisor \
+RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-dev pcre-dev \
+    && apk add --update --no-cache gmp bzip2-dev freetype-dev gettext-dev icu-dev libjpeg-turbo-dev libpng-dev oniguruma-dev postgresql-dev supervisor \
     && docker-php-ext-configure gd --with-freetype=/usr/include/ --with-jpeg=/usr/include \
     && docker-php-ext-configure pdo_pgsql \
     && docker-php-ext-install bz2 curl dom gd gmp gettext mbstring opcache intl opcache pcntl pdo pdo_pgsql posix xml \
