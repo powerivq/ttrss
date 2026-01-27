@@ -29,7 +29,7 @@ class OpenAI_Auto_Summary extends Plugin {
             $this->openai_base_url = "https://api.openai.com/v1";
         }
 
-        $host->add_filter_action($this, 'openai_auto_summary', __('Generate OpenAI Summary'));
+        $host->add_filter_action($this, 'openai_summary', __('Generate OpenAI Summary'));
         $host->add_hook($host::HOOK_PREFS_TAB, $this);
     }
 
@@ -86,7 +86,7 @@ class OpenAI_Auto_Summary extends Plugin {
 
     function hook_article_filter_action($article, $action) {
         try {
-            if ($action != "openai_auto_summary") return $article;
+            if ($action != "openai_summary") return $article;
 
             if (!$this->openai_api_key) {
                 return $article;
