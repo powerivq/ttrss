@@ -31,6 +31,7 @@ COPY fever-plugin.zip /tmp/
 COPY newsplus-plugin.zip /tmp/
 COPY powerivq /tmp/powerivq
 COPY af_proxy_http /tmp/af_proxy_http
+COPY openai_summary /tmp/openai_summary
 
 COPY config.php /tt-rss/
 RUN mv /tt-rss /rss \
@@ -47,6 +48,7 @@ RUN mv /tt-rss /rss \
     && mv /tmp/tt-rss-newsplus-plugin-master/api_newsplus /rss/plugins.local/api_newsplus \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
     && mv /tmp/af_proxy_http /rss/plugins.local/af_proxy_http \
+    && mv /tmp/openai_summary /rss/plugins.local/openai_summary \
     && mkdir pusher && cd pusher \
     && wget https://github.com/powerivq/ttrss-pusher/releases/download/2.0.1/release.zip \
     && unzip release.zip && rm release.zip && cd .. \
