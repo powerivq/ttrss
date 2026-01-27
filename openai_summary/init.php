@@ -56,7 +56,7 @@ class OpenAI_Auto_Summary extends Plugin {
             'Content-Type: application/json',
             'Authorization: Bearer ' . $this->openai_api_key
         ));
-        curl_setopt($ch, CURLOPT_TIMEOUT, 300); // Increased to 300 seconds (5 minutes)
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60); // 1 minute timeout
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
 
         $response = curl_exec($ch);
