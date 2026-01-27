@@ -1,4 +1,4 @@
-FROM php:8-fpm-alpine
+FROM php:8.4-fpm-alpine
 
 ENV CI_COMMIT_SHORT_SHA=1
 ENV CI_COMMIT_TIMESTAMP=1
