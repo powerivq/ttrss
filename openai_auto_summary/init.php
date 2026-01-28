@@ -177,7 +177,7 @@ class OpenAI_Auto_Summary extends Plugin {
             $summary = $result['summary'];
             
             // Construct HTML: <div><h2>TITLE</h2>CONTENT</div><br/><hr/><br/><div>%s</div>
-            $summary_html = "<div>" . nl2br($summary) . "</div><br/><hr/><br/>";
+            $summary_html = "<div style='background:color-mix(in srgb, Canvas 96%, CanvasText 4%); padding: 10px; border-radius: 10px;'>" . nl2br($summary) . "</div><br/><hr/><br/>";
             
             // Prepend summary to content
             $article["content"] = $summary_html . "<div>" . $article["content"] . "</div>";
