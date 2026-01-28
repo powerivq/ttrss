@@ -15,6 +15,14 @@ class OpenAI_Auto_Summary extends Plugin {
 
     function init($host) {
         $this->host = $host;
+        
+        // Only support PostgreSQL
+        $pdo = $this->host->get_pdo();
+        $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        if ($driver !== 'pgsql') {
+            user_error("OpenAI_Auto_Summary: Only PostgreSQL is supported", E_USER_ERROR);
+        }
+        
         $this->openai_api_key = $this->host->get($this, "openai_api_key");
         $this->openai_base_url = $this->host->get($this, "openai_base_url", "https://api.openai.com/v1");
         $this->openai_model = $this->host->get($this, "openai_model", "gpt-4o-mini");
@@ -31,127 +39,38 @@ class OpenAI_Auto_Summary extends Plugin {
 
         $host->add_filter_action($this, 'openai_summary', __('Generate OpenAI Summary'));
         $host->add_hook($host::HOOK_PREFS_TAB, $this);
+        $host->add_hook($host::HOOK_HOUSE_KEEPING, $this);
+        $host->add_hook($host::HOOK_RENDER_ARTICLE_API, $this);
+        $host->add_hook($host::HOOK_RENDER_ARTICLE_CDM, $this);
+        $host->add_hook($host::HOOK_FETCH_FEED, $this);
     }
 
-    private function call_openai_api($prompt) {
-        $url = rtrim($this->openai_base_url, '/') . '/chat/completions';
-
-        $data = array(
-            'model' => $this->openai_model,
-            'messages' => array(
-                array(
-                    'role' => 'user',
-                    'content' => $prompt
-                )
-            ),
-            'temperature' => 0.5,
-            'max_tokens' => 5000 // Increased to 5000
-        );
-
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Content-Type: application/json',
-            'Authorization: Bearer ' . $this->openai_api_key
-        ));
-        curl_setopt($ch, CURLOPT_TIMEOUT, 60); // 1 minute timeout
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-        if (curl_errno($ch)) {
-            error_log("OpenAI_Auto_Summary: Connection error: " . curl_error($ch));
-            curl_close($ch);
-            return "";
-        }
-        curl_close($ch);
-
-        $response_data = json_decode($response, true);
-
-        if ($http_code !== 200) {
-            $error_msg = isset($response_data['error']['message']) ? $response_data['error']['message'] : 'Unknown error';
-            error_log("OpenAI_Auto_Summary: API Error ($http_code): $error_msg");
-            return "";
-        }
-
-        if (isset($response_data['choices'][0]['message']['content'])) {
-            return trim($response_data['choices'][0]['message']['content']);
-        }
-
-        return "";
+    function init_database() {
+        $sql_file = __DIR__ . '/init_pgsql.sql';
+        $sql = file_get_contents($sql_file);
+        $this->host->get_pdo()->exec($sql);
     }
 
     function hook_article_filter_action($article, $action) {
-        try {
-            if ($action != "openai_summary") return $article;
-
-            if (!$this->openai_api_key) {
-                return $article;
-            }
-
-            // Prepare content for the prompt
-            $title = isset($article["title"]) ? $article["title"] : "";
+        // Add article to queue for processing
+        if ($action == "openai_summary") {
+            $guid = isset($article["guid_hashed"]) ? $article["guid_hashed"] : null;
+            $owner_uid = isset($article["owner_uid"]) ? $article["owner_uid"] : null;
+            error_log("OpenAI_Auto_Summary: Adding article guid=$guid to queue for user $owner_uid");
             
-            // Convert breaks to newlines to prevent word concatenation, then strip tags
-            $raw_content = isset($article["content"]) ? $article["content"] : "";
-            $content = str_replace(array('<br>', '<br/>', '<br />', '</p>'), "\n", $raw_content);
-            $content = strip_tags($content);
-            $content = trim($content);
-
-            // Skip and early return if content is empty
-            if (empty($content)) {
-                return $article;
+            if ($guid && $owner_uid) {
+                try {
+                    $this->host->get_pdo()->prepare(
+                        "INSERT INTO ttrss_summary_queue (guid, owner_uid) VALUES (?, ?) 
+                         ON CONFLICT (guid, owner_uid) DO NOTHING"
+                    )->execute([$guid, $owner_uid]);
+                } catch (Exception $e) {
+                    error_log("OpenAI_Auto_Summary: Error adding to queue: " . $e->getMessage());
+                }
             }
-            
-            // Truncate content to avoid hitting token limits and control costs
-            $content = mb_substr($content, 0, $this->max_text_length);
-
-            // Replace placeholders in prompt
-            $prompt = str_replace(
-                ['{title}', '{content}'], 
-                [$title, $content], 
-                $this->summary_prompt
-            );
-
-            $response = $this->call_openai_api($prompt);
-
-            if (!empty($response)) {
-                $extracted_title = "";
-                $extracted_summary = "";
-
-                // Parse <title> and <summary> tags
-                if (preg_match('/<title>(.*?)<\/title>/s', $response, $matches)) {
-                    $extracted_title = trim($matches[1]);
-                }
-                if (preg_match('/<summary>(.*?)<\/summary>/s', $response, $matches)) {
-                    $extracted_summary = trim($matches[1]);
-                }
-
-                // Fallback: If no tags found, treat the whole response as summary
-                if (empty($extracted_title) && empty($extracted_summary)) {
-                    $extracted_summary = trim($response);
-                }
-
-                // Construct HTML according to requested format: <div><h2>TITLE</h2>CONTENT</div><br/><hr/><br/><div>%s</div>
-                $summary_html = "<div>";
-                if (!empty($extracted_title)) {
-                    $summary_html .= "<h2>" . htmlspecialchars($extracted_title) . "</h2>";
-                }
-                $summary_html .= nl2br(htmlspecialchars($extracted_summary));
-                $summary_html .= "</div><br/><hr/><br/>";
-
-                // Wrap original content in div and prepend summary structure
-                $article["content"] = $summary_html . "<div>" . $article["content"] . "</div>";
-            }
-
-            return $article;
-        } catch (Exception $e) {
-            error_log("OpenAI_Auto_Summary: Error processing article: " . $e->getMessage());
-            return $article;
         }
+        
+        return $article;
     }
 
     function api_version() {
@@ -218,6 +137,66 @@ class OpenAI_Auto_Summary extends Plugin {
         print "<button dojoType=\"dijit.form.Button\" type=\"submit\" class=\"alt-primary\">".__("Save")."</button>";
         print "</form>";
         print "</div>";
+    }
+
+    function hook_house_keeping() {
+        $script_path = __DIR__ . '/background_task.php';
+        $lock_file = '/tmp/ttrss-summary-background.lock';
+        
+        // Check if the lock file exists and if the process is still running
+        if (file_exists($lock_file)) {
+            $pid = file_get_contents($lock_file);
+            // Check if process is still running
+            if (file_exists("/proc/$pid")) {
+                // Process is still running, don't start a new one
+                return;
+            }
+        }
+        
+        // Start the background task
+        shell_exec("php " . escapeshellarg($script_path) . " > /dev/null 2>&1 &");
+    }
+
+    private function render_article_with_summary($article) {
+        // Get guid from article data
+        $guid = isset($article["guid_hashed"]) ? $article["guid_hashed"] : null;
+        $owner_uid = isset($article["owner_uid"]) ? $article["owner_uid"] : $_SESSION['uid'];
+        
+        if (!$guid || !$owner_uid) {
+            return $article;
+        }
+
+        // Query database for summary using guid
+        $sth = $this->host->get_pdo()->prepare('SELECT summary FROM ttrss_summary WHERE guid = ? AND owner_uid = ?');
+        $sth->execute([$guid, $owner_uid]);
+        $result = $sth->fetch();
+        
+        if ($result && !empty($result['summary'])) {
+            $summary = $result['summary'];
+            
+            // Construct HTML: <div><h2>TITLE</h2>CONTENT</div><br/><hr/><br/><div>%s</div>
+            $summary_html = "<div>" . nl2br(htmlspecialchars($summary)) . "</div><br/><hr/><br/>";
+            
+            // Prepend summary to content
+            $article["content"] = $summary_html . "<div>" . $article["content"] . "</div>";
+        }
+        
+        return $article;
+    }
+
+    function hook_render_article_api($params) {
+        $headline = $params["headline"];
+        $headline = $this->render_article_with_summary($headline);
+        return $headline;
+    }
+
+    function hook_render_article_cdm($article) {
+        return $this->render_article_with_summary($article);
+    }
+
+    function hook_fetch_feed($feed_data, $fetch_url, $owner_uid, $feed, $num, $auth_login, $auth_pass) {
+        $this->init_database();
+        return $feed_data;
     }
 
     function save() {
