@@ -21,7 +21,9 @@ try {
     exit(1);
 }
 
-$lock_file = '/tmp/ttrss-summary-background.lock';
+// Support multiple workers - each gets its own lock file
+$worker_id = getenv('SUPERVISOR_PROCESS_NUM') ?: '0';
+$lock_file = "/tmp/ttrss-summary-background-{$worker_id}.lock";
 $pid = getmypid();
 
 // Write our PID to the lock file
@@ -271,7 +273,8 @@ while (true) {
         global $pdo;
         
         // Fetch one item from queue (excluding items that have failed 10+ times)
-        $sth = $pdo->prepare("SELECT guid, owner_uid, failure_count FROM ttrss_summary_queue WHERE failure_count < 10 LIMIT 1");
+        // Use FOR UPDATE SKIP LOCKED to prevent multiple workers from grabbing the same item
+        $sth = $pdo->prepare("SELECT guid, owner_uid, failure_count FROM ttrss_summary_queue WHERE failure_count < 10 LIMIT 1 FOR UPDATE SKIP LOCKED");
         $sth->execute();
         $queue_item = $sth->fetch();
         

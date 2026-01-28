@@ -2,6 +2,7 @@ FROM php:8.4-fpm-alpine
 
 ENV CI_COMMIT_SHORT_SHA=1
 ENV CI_COMMIT_TIMESTAMP=1
+ENV TTRSS_AUTO_SUMMARY_WORKERS=1
 
 RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-dev pcre-dev \
     && apk add --update --no-cache gmp bzip2-dev freetype-dev gettext-dev icu-dev libjpeg-turbo-dev libpng-dev oniguruma-dev postgresql-dev supervisor \
