@@ -141,15 +141,17 @@ class OpenAI_Auto_Summary extends Plugin {
 
     function hook_house_keeping() {
         $script_path = __DIR__ . '/background_task.php';
-        $lock_file = '/tmp/ttrss-summary-background.lock';
         
-        // Check if the lock file exists and if the process is still running
-        if (file_exists($lock_file)) {
-            $pid = file_get_contents($lock_file);
-            // Check if process is still running
-            if (file_exists("/proc/$pid")) {
-                // Process is still running, don't start a new one
-                return;
+        // Check if any worker is already running
+        $lock_files = glob('/tmp/ttrss-summary-background-*.lock');
+        foreach ($lock_files as $lock_file) {
+            if (file_exists($lock_file)) {
+                $pid = file_get_contents($lock_file);
+                // Check if process is still running
+                if (file_exists("/proc/$pid")) {
+                    // Process is still running, don't start a new one
+                    return;
+                }
             }
         }
         
