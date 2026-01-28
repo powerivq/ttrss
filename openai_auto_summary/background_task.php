@@ -229,7 +229,7 @@ function process_queue_item($pdo, $guid, $owner_uid) {
         if (preg_match('/<title>(.*?)<\/title>/s', $response, $matches)) {
             $extracted_title = trim($matches[1]);
         }
-        if (preg_match('/\u003csummary\u003e(.*?)\u003c\\/summary\u003e/s', $response, $matches)) {
+        if (preg_match('/<summary>(.*?)<\/summary>/s', $response, $matches)) {
             $extracted_summary = trim($matches[1]);
             // Replace multiple consecutive newlines (with optional whitespace between) with a single newline
             $extracted_summary = preg_replace('/(\s*\n){2,}/', "\n", $extracted_summary);
