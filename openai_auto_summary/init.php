@@ -159,9 +159,9 @@ class OpenAI_Auto_Summary extends Plugin {
 
     private function render_article_with_summary($article) {
         // Get guid from article data
-        $guid = isset($article["guid_hashed"]) ? $article["guid_hashed"] : null;
+        $guid = isset($article["guid"]) ? $article["guid"] : null;
         $owner_uid = isset($article["owner_uid"]) ? $article["owner_uid"] : $_SESSION['uid'];
-        
+
         if (!$guid || !$owner_uid) {
             return $article;
         }
@@ -175,7 +175,7 @@ class OpenAI_Auto_Summary extends Plugin {
             $summary = $result['summary'];
             
             // Construct HTML: <div><h2>TITLE</h2>CONTENT</div><br/><hr/><br/><div>%s</div>
-            $summary_html = "<div>" . nl2br(htmlspecialchars($summary)) . "</div><br/><hr/><br/>";
+            $summary_html = "<div>" . nl2br($summary) . "</div><br/><hr/><br/>";
             
             // Prepend summary to content
             $article["content"] = $summary_html . "<div>" . $article["content"] . "</div>";

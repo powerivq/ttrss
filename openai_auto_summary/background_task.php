@@ -86,6 +86,9 @@ function call_openai_api($prompt, $settings) {
         'max_tokens' => 5000
     );
 
+    // Start timer
+    $start_time = microtime(true);
+
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -99,11 +102,15 @@ function call_openai_api($prompt, $settings) {
 
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    // Calculate response time
+    $end_time = microtime(true);
+    $response_time_ms = round(($end_time - $start_time) * 1000, 2);
 
     if (curl_errno($ch)) {
-        error_log("OpenAI_Auto_Summary: Connection error: " . curl_error($ch));
+        error_log("OpenAI_Auto_Summary: Connection error: " . curl_error($ch) . " (response time: {$response_time_ms}ms)");
         curl_close($ch);
-        return ["success" => false, "error" => "connection", "message" => curl_error($ch)];
+        return ["success" => false, "error" => "connection", "message" => curl_error($ch), "response_time_ms" => $response_time_ms];
     }
     curl_close($ch);
 
@@ -111,7 +118,7 @@ function call_openai_api($prompt, $settings) {
 
     if ($http_code !== 200) {
         $error_msg = isset($response_data['error']['message']) ? $response_data['error']['message'] : 'Unknown error';
-        error_log("OpenAI_Auto_Summary: API Error ($http_code): $error_msg");
+        error_log("OpenAI_Auto_Summary: API Error ($http_code): $error_msg (response time: {$response_time_ms}ms)");
         
         // Determine error type
         $error_type = "client"; // default to client error (count failure)
@@ -121,7 +128,7 @@ function call_openai_api($prompt, $settings) {
             $error_type = "billing"; // rate limit or billing (don't count)
         }
         
-        return ["success" => false, "error" => $error_type, "http_code" => $http_code, "message" => $error_msg];
+        return ["success" => false, "error" => $error_type, "http_code" => $http_code, "message" => $error_msg, "response_time_ms" => $response_time_ms];
     }
 
     if (isset($response_data['choices'][0]['message']['content'])) {
@@ -135,14 +142,17 @@ function call_openai_api($prompt, $settings) {
             ];
         }
         
+        error_log("OpenAI_Auto_Summary: API call successful (response time: {$response_time_ms}ms)");
+        
         return [
             "success" => true, 
             "content" => trim($response_data['choices'][0]['message']['content']),
-            "tokens" => $tokens
+            "tokens" => $tokens,
+            "response_time_ms" => $response_time_ms
         ];
     }
 
-    return ["success" => false, "error" => "client", "message" => "No content in response"];
+    return ["success" => false, "error" => "client", "message" => "No content in response", "response_time_ms" => $response_time_ms];
 }
 
 function process_queue_item($pdo, $guid, $owner_uid) {
@@ -207,7 +217,8 @@ function process_queue_item($pdo, $guid, $owner_uid) {
     // Log token usage
     if (isset($api_response['tokens']) && !empty($api_response['tokens'])) {
         $tokens = $api_response['tokens'];
-        error_log("OpenAI_Auto_Summary: Token usage - prompt: {$tokens['prompt_tokens']}, completion: {$tokens['completion_tokens']}, total: {$tokens['total_tokens']}");
+        $response_time = $api_response['response_time_ms'] ?? 0;
+        error_log("OpenAI_Auto_Summary: Token usage - prompt: {$tokens['prompt_tokens']}, completion: {$tokens['completion_tokens']}, total: {$tokens['total_tokens']}, response time: {$response_time}ms");
     }
     
     $response = $api_response['content'];
@@ -236,9 +247,9 @@ function process_queue_item($pdo, $guid, $owner_uid) {
         // Construct summary text
         $summary = "";
         if (!empty($extracted_title)) {
-            $summary .= "<h2>" . $extracted_title . "</h2>";
-        }
-        $summary .= $extracted_summary;
+            $summary .= "<h2>" . htmlspecialchars($extracted_title) . "</h2><br/>";
+        }   
+        $summary .= nl2br(htmlspecialchars($extracted_summary));
         
         // Store in database
         $sth = $pdo->prepare(
