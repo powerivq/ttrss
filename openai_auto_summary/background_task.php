@@ -178,11 +178,7 @@ function process_queue_item($pdo, $guid, $owner_uid) {
     $article_id = $article['id'];
     $title = $article['title'] ?? '';
     $raw_content = $article['content'] ?? '';
-    
-    // Log article details
-    $content_preview = mb_substr(strip_tags($raw_content), 0, 50);
-    error_log("OpenAI_Auto_Summary: Article title: \"$title\", content preview: \"$content_preview...\"");
-    
+
     // Convert breaks to newlines to prevent word concatenation, then strip tags
     $content = str_replace(array('<br>', '<br/>', '<br />', '</p>'), "\n", $raw_content);
     $content = strip_tags($content);
