@@ -2,23 +2,26 @@
 // Background task that processes summary queue
 // This script is called from the HOOK_HOUSE_KEEPING hook
 
-// Get database credentials from environment
-$db_host = getenv('TTRSS_DB_HOST') ?: 'postgres';
-$db_port = getenv('TTRSS_DB_PORT') ?: '5432';
-$db_name = getenv('TTRSS_DB_NAME') ?: 'ttrss';
-$db_user = getenv('TTRSS_DB_USER') ?: 'ttrss';
-$db_pass = getenv('TTRSS_DB_PASS') ?: '';
+// Function to get a fresh database connection
+function get_db_connection() {
+    // Get database credentials from environment
+    $db_host = getenv('TTRSS_DB_HOST') ?: 'postgres';
+    $db_port = getenv('TTRSS_DB_PORT') ?: '5432';
+    $db_name = getenv('TTRSS_DB_NAME') ?: 'ttrss';
+    $db_user = getenv('TTRSS_DB_USER') ?: 'ttrss';
+    $db_pass = getenv('TTRSS_DB_PASS') ?: '';
 
-// Create PDO connection
-try {
-    $dsn = "pgsql:host=$db_host;port=$db_port;dbname=$db_name";
-    $pdo = new PDO($dsn, $db_user, $db_pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-    ]);
-} catch (PDOException $e) {
-    error_log("OpenAI_Auto_Summary: Database connection failed: " . $e->getMessage());
-    exit(1);
+    try {
+        $dsn = "pgsql:host=$db_host;port=$db_port;dbname=$db_name";
+        $pdo = new PDO($dsn, $db_user, $db_pass, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+        ]);
+        return $pdo;
+    } catch (PDOException $e) {
+        error_log("OpenAI_Auto_Summary: Database connection failed: " . $e->getMessage());
+        throw $e;
+    }
 }
 
 // Support multiple workers - each gets its own lock file
@@ -267,8 +270,11 @@ function process_queue_item($pdo, $guid, $owner_uid) {
 
 // Main loop - runs forever
 while (true) {
+    $pdo = null; // Ensure connection is null at start
+    
     try {
-        global $pdo;
+        // Get a fresh database connection
+        $pdo = get_db_connection();
         
         // Fetch one item from queue (excluding items that have failed 10+ times)
         // Use FOR UPDATE SKIP LOCKED to prevent multiple workers from grabbing the same item
@@ -320,6 +326,9 @@ while (true) {
                 error_log("OpenAI_Auto_Summary: Cleaned up " . $sth->rowCount() . " items with 10+ failures");
             }
             
+            // Close connection before sleeping
+            $pdo = null;
+            
             // Queue is empty, sleep for 10 seconds
             error_log("OpenAI_Auto_Summary: Queue empty, waiting...");
             sleep(10);
@@ -327,6 +336,9 @@ while (true) {
     } catch (Exception $e) {
         error_log("OpenAI_Auto_Summary: Error in main loop: " . $e->getMessage());
         sleep(10); // Sleep on error to avoid tight loop
+    } finally {
+        // Always close the connection at the end of each iteration
+        $pdo = null; // PHP PDO: setting to null closes the connection
     }
     
     // Process signals if available
