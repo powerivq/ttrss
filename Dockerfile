@@ -27,9 +27,7 @@ COPY theme.zip /tmp/
 # 20230520
 COPY fever-plugin.zip /tmp/
 
-# https://github.com/hrk/tt-rss-newsplus-plugin
-# 20230520
-COPY newsplus-plugin.zip /tmp/
+# https://github.com/powerivq/ttrss-headlineflow-plugin
 COPY powerivq /tmp/powerivq
 COPY af_proxy_http /tmp/af_proxy_http
 COPY openai_auto_summary /tmp/openai_auto_summary
@@ -45,8 +43,9 @@ RUN mv /tt-rss /rss \
     && mv /tmp/tt-rss-feedly-theme-dist/feedly /rss/themes/ \
     && unzip /tmp/fever-plugin.zip -d /tmp \
     && mv /tmp/tinytinyrss-fever-plugin-master /rss/plugins.local/fever \
-    && unzip /tmp/newsplus-plugin.zip -d /tmp \
-    && mv /tmp/tt-rss-newsplus-plugin-master/api_newsplus /rss/plugins.local/api_newsplus \
+    && wget -O /tmp/headlineflow-plugin.zip https://codeload.github.com/powerivq/ttrss-headlineflow-plugin/zip/refs/heads/main \
+    && unzip /tmp/headlineflow-plugin.zip -d /tmp \
+    && mv /tmp/ttrss-headlineflow-plugin-main/api_headlineflow /rss/plugins.local/api_headlineflow \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
     && mv /tmp/af_proxy_http /rss/plugins.local/af_proxy_http \
     && mv /tmp/openai_auto_summary /rss/plugins.local/openai_auto_summary \
