@@ -168,10 +168,17 @@ class OpenAI_Auto_Summary extends Plugin {
             return $article;
         }
 
-        // Query database for summary using guid
-        $sth = $this->host->get_pdo()->prepare('SELECT summary FROM ttrss_summary WHERE guid = ? AND owner_uid = ?');
-        $sth->execute([$guid, $owner_uid]);
-        $result = $sth->fetch();
+        try {
+            $sth = $this->host->get_pdo()->prepare(
+                'SELECT summary FROM ttrss_summary WHERE guid = ? AND owner_uid = ?'
+            );
+            $sth->execute([$guid, $owner_uid]);
+            $result = $sth->fetch();
+        } catch (Throwable $e) {
+            // Summaries are optional; a pending database migration must not break article rendering.
+            error_log("OpenAI_Auto_Summary: Summary unavailable: " . $e->getMessage());
+            return $article;
+        }
         
         if ($result && !empty($result['summary'])) {
             $summary = $result['summary'];
@@ -197,7 +204,12 @@ class OpenAI_Auto_Summary extends Plugin {
     }
 
     function hook_fetch_feed($feed_data, $fetch_url, $owner_uid, $feed, $num, $auth_login, $auth_pass) {
-        $this->init_database();
+        try {
+            $this->init_database();
+        } catch (Throwable $e) {
+            // Retry on the next fetch instead of blocking all feed updates during a migration.
+            error_log("OpenAI_Auto_Summary: Database initialization deferred: " . $e->getMessage());
+        }
         return $feed_data;
     }
 
