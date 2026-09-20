@@ -1,5 +1,7 @@
 FROM php:8.4-fpm-alpine
 
+ARG TTRSS_COMMIT=820aeae2ce957c075568b9e7cec28c44f33cfc8a
+
 ENV CI_COMMIT_SHORT_SHA=1
 ENV CI_COMMIT_TIMESTAMP=1
 ENV TTRSS_AUTO_SUMMARY_WORKERS=1
@@ -13,10 +15,7 @@ RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-d
 
 COPY php-custom.ini /usr/local/etc/php/conf.d/
 
-# https://git.tt-rss.org/fox/tt-rss
-# tar --exclude='tt-rss/.git*' -czvf ttrss.tar.gz tt-rss/
-# 20230520
-ADD ttrss.tar.gz /
+# https://github.com/tt-rss/tt-rss
 COPY patch /tmp/patch
 
 # https://github.com/levito/tt-rss-feedly-theme
@@ -31,9 +30,13 @@ COPY fever-plugin.zip /tmp/
 COPY powerivq /tmp/powerivq
 COPY af_proxy_http /tmp/af_proxy_http
 COPY openai_auto_summary /tmp/openai_auto_summary
+COPY openai_auto_tag /tmp/openai_auto_tag
 
-COPY config.php /tt-rss/
-RUN mv /tt-rss /rss \
+COPY config.php /tmp/config.php
+RUN wget -O /tmp/ttrss.zip "https://codeload.github.com/tt-rss/tt-rss/zip/${TTRSS_COMMIT}" \
+    && unzip /tmp/ttrss.zip -d /tmp \
+    && mv "/tmp/tt-rss-${TTRSS_COMMIT}" /rss \
+    && mv /tmp/config.php /rss/config.php \
     && cd /rss \
     && apk add --no-cache patch \
     && patch -p1 -i /tmp/patch \
@@ -49,6 +52,7 @@ RUN mv /tt-rss /rss \
     && mv /tmp/powerivq /rss/plugins.local/powerivq \
     && mv /tmp/af_proxy_http /rss/plugins.local/af_proxy_http \
     && mv /tmp/openai_auto_summary /rss/plugins.local/openai_auto_summary \
+    && mv /tmp/openai_auto_tag /rss/plugins.local/openai_auto_tag \
     && mkdir pusher && cd pusher \
     && wget https://github.com/powerivq/ttrss-pusher/releases/download/2.0.1/release.zip \
     && unzip release.zip && rm release.zip && cd .. \

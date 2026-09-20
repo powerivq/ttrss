@@ -1,44 +1,12 @@
 diff --git a/backend.php b/backend.php
-index 860a3940c..c8e2e775d 100644
 --- a/backend.php
 +++ b/backend.php
-@@ -69,6 +69,7 @@
- 	$update_intervals = array(
- 		0   => __("Default interval"),
- 		-1  => __("Disable updates"),
+@@ -65,0 +66 @@
 +		1   => "每1分鐘",
- 		15  => __("15 minutes"),
- 		30  => __("30 minutes"),
- 		60  => __("Hourly"),
-@@ -79,6 +80,7 @@
- 
- 	$update_intervals_nodefault = array(
- 		-1  => __("Disable updates"),
+@@ -75,0 +77 @@
 +		1   => "每1分鐘",
- 		15  => __("15 minutes"),
- 		30  => __("30 minutes"),
- 		60  => __("Hourly"),
-diff --git a/classes/RPC.php b/classes/RPC.php
-index 82f85fc11..da6f9f3c6 100644
---- a/classes/RPC.php
-+++ b/classes/RPC.php
-@@ -304,7 +304,6 @@ class RPC extends Handler_Protected {
- 				u.access_level NOT IN (".sprintf("%d, %d", UserHelper::ACCESS_LEVEL_DISABLED, UserHelper::ACCESS_LEVEL_READONLY).")
- 				$owner_check_qpart
- 				$update_limit_qpart
--				$updstart_thresh_qpart
- 			ORDER BY $random_qpart LIMIT 30";
- 
- 		$res = $pdo->query($query);
 diff --git a/classes/RSSUtils.php b/classes/RSSUtils.php
-index f6a81d00f..b99152617 100644
 --- a/classes/RSSUtils.php
 +++ b/classes/RSSUtils.php
-@@ -173,7 +173,6 @@ class RSSUtils {
- 				u.access_level NOT IN (".sprintf("%d, %d", UserHelper::ACCESS_LEVEL_DISABLED, UserHelper::ACCESS_LEVEL_READONLY).")
- 				$login_thresh_qpart
- 				$update_limit_qpart
--				$updstart_thresh_qpart
- 				$query_order $query_limit";
- 
- 		Debug::log("base feed query: $query", Debug::LOG_EXTENDED);
+@@ -153 +153,0 @@
+-				AND (last_update_started IS NULL OR last_update_started < NOW() - INTERVAL '10 minute')
