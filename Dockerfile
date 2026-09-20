@@ -54,7 +54,7 @@ RUN wget -O /tmp/ttrss.zip "https://codeload.github.com/tt-rss/tt-rss/zip/${TTRS
     && mv /tmp/openai_auto_summary /rss/plugins.local/openai_auto_summary \
     && mv /tmp/openai_auto_tag /rss/plugins.local/openai_auto_tag \
     && mkdir pusher && cd pusher \
-    && wget https://github.com/powerivq/ttrss-pusher/releases/download/2.0.1/release.zip \
+    && wget https://github.com/powerivq/ttrss-pusher/releases/download/2.0.2/release.zip \
     && unzip release.zip && rm release.zip && cd .. \
     && mv pusher plugins.local/ \
     && rm -rf /tmp/* /rss/feed-icons \
