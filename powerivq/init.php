@@ -15,7 +15,12 @@ class PowerIVQ extends Plugin {
     }
 
     function get_js() {
-        return file_get_contents(dirname(__FILE__) . '/init.js');
+        return file_get_contents(__DIR__ . '/material-icons.js') . "\n" .
+            file_get_contents(__DIR__ . '/init.js');
+    }
+
+    function get_prefs_js() {
+        return file_get_contents(__DIR__ . '/material-icons.js');
     }
 
     function hook_hotkey_map($hotkeys) {
