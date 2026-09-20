@@ -1,3 +1,12 @@
+const materialIconsHref = 'https://fonts.googleapis.com/icon?family=Material+Icons';
+
+if (!document.querySelector(`link[href="${materialIconsHref}"]`)) {
+    const materialIconsStylesheet = document.createElement('link');
+    materialIconsStylesheet.href = materialIconsHref;
+    materialIconsStylesheet.rel = 'stylesheet';
+    document.head.appendChild(materialIconsStylesheet);
+}
+
 require(['dojo/_base/kernel', 'dojo/ready'], function(dojo, ready) {
     ready(function() {
         PluginHost.register(PluginHost.HOOK_INIT_COMPLETE, function() {
