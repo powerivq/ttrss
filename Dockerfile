@@ -31,6 +31,7 @@ COPY powerivq /tmp/powerivq
 COPY af_proxy_http /tmp/af_proxy_http
 COPY openai_auto_summary /tmp/openai_auto_summary
 COPY openai_auto_tag /tmp/openai_auto_tag
+COPY jev_auto_tag /tmp/jev_auto_tag
 
 COPY config.php /tmp/config.php
 RUN wget -O /tmp/ttrss.zip "https://codeload.github.com/tt-rss/tt-rss/zip/${TTRSS_COMMIT}" \
@@ -53,6 +54,7 @@ RUN wget -O /tmp/ttrss.zip "https://codeload.github.com/tt-rss/tt-rss/zip/${TTRS
     && mv /tmp/af_proxy_http /rss/plugins.local/af_proxy_http \
     && mv /tmp/openai_auto_summary /rss/plugins.local/openai_auto_summary \
     && mv /tmp/openai_auto_tag /rss/plugins.local/openai_auto_tag \
+    && mv /tmp/jev_auto_tag /rss/plugins.local/jev_auto_tag \
     && mkdir pusher && cd pusher \
     && wget https://github.com/powerivq/ttrss-pusher/releases/download/2.0.2/release.zip \
     && unzip release.zip && rm release.zip && cd .. \
