@@ -1,15 +1,14 @@
 require(['dojo/_base/kernel', 'dojo/ready'], function(dojo, ready) {
     ready(function() {
         PluginHost.register(PluginHost.HOOK_INIT_COMPLETE, function() {
-            var origOpenInNewWindow = Article.openInNewWindow;
+            const origOpenInNewWindow = Article.openInNewWindow;
             Article.openInNewWindow = function(id) {
-                const row = $('RROW-' + id);
-                if (!row) return origOpenInNewWindow(id);
-                var title = row.querySelector('.title');
-                var href = title.getAttribute('href');
-                window.open(href, '_blank', 'noopener');
+                const href = Headlines.objectById(id)?.link;
+                if (!href) return origOpenInNewWindow.call(this, id);
+
+                window.open(href, '_blank', 'noopener,noreferrer');
                 Headlines.toggleUnread(id, 0);
-            }
+            };
 
             var move = Headlines.move;
             Headlines.move = function(mode, params = {}) {
