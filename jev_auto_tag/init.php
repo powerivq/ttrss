@@ -265,7 +265,7 @@ JS;
         print '<div dojoType="dijit.layout.AccordionPane" title="<i class=\'material-icons\'>label</i> ' . __("Jev Auto Tag Settings") . '">';
         print '<p>' . __("Create a filter with the Generate Jev Tags action. Each article is sent at most once; every configured tag is evaluated as an independent yes/no Noul question in one synchronous request.") . '</p>';
         print '<form id="jev-auto-tag-form" dojoType="dijit.form.Form">';
-        print '<script type="dojo/method" event="onSubmit" args="evt">evt.preventDefault(); if (this.validate() && JevTagRules.serialize()) { xhr.post("backend.php", this.getValues(), (reply) => { Notify.info(reply); }); }</script>';
+        print '<script type="dojo/method" event="onSubmit" args="evt">evt.preventDefault(); var tagRules = JevTagRules.serialize(); if (this.validate() && tagRules !== false) { var values = this.getValues(); values.tag_rules = tagRules; xhr.post("backend.php", values, (reply) => { Notify.info(reply); }); }</script>';
         print \Controls\pluginhandler_tags($this, "save");
 
         print '<fieldset><legend>' . __("TypeSafe Connection") . '</legend>';
@@ -280,7 +280,6 @@ JS;
         print '<p class="text-muted">' . __("A tag is added when its Noul yes-probability meets this threshold.") . '</p>';
         print '<div class="form-group"><h3>' . __("Tag Rules") . '</h3>';
         print '<p>' . __("For each rule, enter the exact tag tt-rss should apply and the focused yes/no question Jev should answer.") . '</p>';
-        print '<input type="hidden" id="jev-tag-rules-value" name="tag_rules" value="' . $h($settings["tag_rules"]) . '">';
         print '<div id="jev-tag-rule-list">';
         $rules = self::parse_tag_rules($settings["tag_rules"]);
         if (!$rules) $rules = [["tag" => "", "question" => ""]];

@@ -63,7 +63,6 @@ window.JevTagRules = {
             return false;
         }
 
-        document.getElementById('jev-tag-rules-value').value = rules.join('\n');
-        return true;
+        return rules.join('\n');
     }
 };
