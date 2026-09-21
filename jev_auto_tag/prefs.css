@@ -16,7 +16,8 @@
     margin-bottom: 0.25rem;
 }
 
-.jev-label-rule input {
+.jev-label-rule input,
+.jev-label-rule select {
     box-sizing: border-box;
     width: 100%;
 }

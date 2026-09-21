@@ -1,5 +1,27 @@
 window.JevLabelRules = {
-    add(label = '', question = '') {
+    options(selectedLabelId = '') {
+        const options = [new Option('Choose a label...', '')];
+        const labels = [...document.querySelectorAll('#jev-available-labels option')]
+            .map(option => ({id: option.value, caption: option.textContent}));
+        const selectedId = String(selectedLabelId);
+
+        for (const label of labels) {
+            options.push(new Option(label.caption, label.id, false, label.id === selectedId));
+        }
+
+        if (selectedId && !labels.some(label => label.id === selectedId)) {
+            options.push(new Option(`Deleted label #${selectedId}; choose a replacement`, '', false, true));
+        }
+
+        if (!labels.length && !selectedId) {
+            options[0].text = 'No labels available';
+            options[0].disabled = true;
+        }
+
+        return options;
+    },
+
+    add(labelId = '', question = '', focus = true) {
         const container = document.getElementById('jev-label-rule-list');
         if (!container) return;
 
@@ -7,8 +29,8 @@ window.JevLabelRules = {
         row.className = 'jev-label-rule';
         row.innerHTML = `
             <label>
-                <span>Label name</span>
-                <input type="text" class="jev-label-rule-name" placeholder="technology">
+                <span>Label</span>
+                <select class="jev-label-rule-name"></select>
             </label>
             <label>
                 <span>Yes/no question</span>
@@ -18,11 +40,12 @@ window.JevLabelRules = {
                 <i class="material-icons">close</i>
             </button>`;
 
-        row.querySelector('.jev-label-rule-name').value = label;
+        const select = row.querySelector('.jev-label-rule-name');
+        select.append(...this.options(labelId));
         row.querySelector('.jev-label-rule-question').value = question;
         row.querySelector('.jev-label-rule-remove').addEventListener('click', () => this.remove(row));
         container.appendChild(row);
-        row.querySelector('.jev-label-rule-name').focus();
+        if (focus) select.focus();
     },
 
     remove(row) {
@@ -37,25 +60,19 @@ window.JevLabelRules = {
         const seen = new Set();
 
         for (const row of rows) {
-            const label = row.querySelector('.jev-label-rule-name').value.trim();
+            const labelId = row.querySelector('.jev-label-rule-name').value;
             const question = row.querySelector('.jev-label-rule-question').value.trim();
-            if (!label && !question) continue;
-            if (!label || !question) {
-                Notify.error('Every label rule needs both a label name and a yes/no question.');
+            if (!labelId && !question) continue;
+            if (!labelId || !question) {
+                Notify.error('Every label rule needs both a selected label and a yes/no question.');
                 return false;
             }
-            if (label.includes('|')) {
-                Notify.error('Label names cannot contain the | character.');
+            if (seen.has(labelId)) {
+                Notify.error('Each label can only be used once.');
                 return false;
             }
-
-            const key = label.toLowerCase();
-            if (seen.has(key)) {
-                Notify.error(`Duplicate label name: ${label}`);
-                return false;
-            }
-            seen.add(key);
-            rules.push(`${label} | ${question}`);
+            seen.add(labelId);
+            rules.push(`${labelId} | ${question}`);
         }
 
         if (!rules.length) {

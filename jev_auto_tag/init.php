@@ -46,9 +46,9 @@ class Jev_Auto_Tag extends Plugin {
             "api_key" => trim($this->host->get($this, "typesafe_api_key", "")),
             "base_url" => rtrim(trim($this->host->get($this, "typesafe_base_url", self::DEFAULT_BASE_URL)), "/"),
             "model" => trim($this->host->get($this, "jev_model", self::DEFAULT_MODEL)),
-            "threshold" => max(0.0, min(1.0, (float)$this->host->get($this, "label_threshold", $this->host->get($this, "tag_threshold", self::DEFAULT_THRESHOLD)))),
+            "threshold" => max(0.0, min(1.0, (float)$this->host->get($this, "label_threshold", self::DEFAULT_THRESHOLD))),
             "max_text_length" => max(100, min(5000, (int)$this->host->get($this, "max_text_length", self::DEFAULT_MAX_TEXT_LENGTH))),
-            "label_rules" => $this->host->get($this, "label_rules", $this->host->get($this, "tag_rules", "")),
+            "label_rules" => $this->host->get($this, "label_rules", ""),
         ];
     }
 
@@ -61,17 +61,16 @@ class Jev_Auto_Tag extends Plugin {
             if ($line === "" || str_starts_with($line, "#")) continue;
 
             $parts = array_map("trim", explode("|", $line, 2));
-            $label = $parts[0];
+            $label_id = filter_var($parts[0], FILTER_VALIDATE_INT, ["options" => ["min_range" => 1]]);
             $question = $parts[1] ?? "";
-            $key = mb_strtolower($label);
 
-            if ($label === "" || $question === "" || mb_strlen($label) > 250 || isset($seen[$key])) continue;
+            if (!$label_id || $question === "" || isset($seen[$label_id])) continue;
 
             $rules[] = [
-                "label" => $label,
+                "label_id" => (int)$label_id,
                 "question" => $question,
             ];
-            $seen[$key] = true;
+            $seen[$label_id] = true;
         }
 
         return $rules;
@@ -157,33 +156,27 @@ class Jev_Auto_Tag extends Plugin {
         return $decoded;
     }
 
-    private static function merge_labels($existing_labels, $selected_labels, $owner_uid) {
+    private static function merge_labels($existing_labels, $selected_label_ids, $label_definitions) {
         $labels = array_values((array)$existing_labels);
         $seen = [];
         foreach ($labels as $label) {
             if (is_array($label) && isset($label[1])) $seen[mb_strtolower((string)$label[1])] = true;
         }
 
-        foreach ($selected_labels as $caption) {
-            $caption = trim((string)$caption);
-            $key = mb_strtolower($caption);
-            if ($caption === "" || isset($seen[$key])) continue;
+        foreach ($selected_label_ids as $label_id) {
+            $definition = $label_definitions[$label_id] ?? null;
+            if (!$definition) throw new RuntimeException("Configured label ID $label_id no longer exists");
 
-            $label_id = Labels::find_id($caption, $owner_uid);
-            if (!$label_id) {
-                Labels::create($caption, "", "", $owner_uid);
-                $label_id = Labels::find_id($caption, $owner_uid);
-            }
-            if (!$label_id) throw new RuntimeException("Unable to create label '$caption'");
+            $key = mb_strtolower($definition["caption"]);
+            if (isset($seen[$key])) continue;
 
-            $definition = Labels::get_as_hash($owner_uid)[$label_id];
             $labels[] = [
                 Labels::label_to_feed_id($label_id),
                 $definition["caption"],
                 $definition["fg_color"],
                 $definition["bg_color"],
             ];
-            $seen[mb_strtolower($definition["caption"])] = true;
+            $seen[$key] = true;
         }
         return $labels;
     }
@@ -199,12 +192,18 @@ class Jev_Auto_Tag extends Plugin {
             $this->init_database();
             $settings = $this->settings();
             $rules = self::parse_label_rules($settings["label_rules"]);
+            $label_definitions = Labels::get_as_hash((int)$owner_uid);
             $content = self::article_text($article["content"] ?? "", $settings["max_text_length"]);
 
             if ($settings["api_key"] === "" || $settings["base_url"] === "" || $settings["model"] === "") {
                 throw new RuntimeException("API configuration is incomplete");
             }
             if (!$rules) throw new RuntimeException("No label rules are configured");
+            foreach ($rules as $rule) {
+                if (!isset($label_definitions[$rule["label_id"]])) {
+                    throw new RuntimeException("Configured label ID " . $rule["label_id"] . " no longer exists");
+                }
+            }
             if ($content === "") throw new RuntimeException("Article content is empty");
 
             $state = [
@@ -233,19 +232,28 @@ class Jev_Auto_Tag extends Plugin {
             try {
                 error_log("Jev_Auto_Tag: Calling {$settings['model']} for guid=$guid with " . count($questions) . " label questions");
                 $response = self::call_api($settings, $state, $questions);
-                $selected_labels = [];
+                $selected_label_ids = [];
 
                 foreach ($rules as $index => $rule) {
                     $answer = $response["answers"]["label_$index"] ?? null;
                     if (!is_array($answer) || ($answer["type"] ?? null) !== "noul" || !is_numeric($answer["noul"] ?? null)) {
-                        throw new RuntimeException("API response omitted a valid answer for label '{$rule['label']}'");
+                        $caption = $label_definitions[$rule["label_id"]]["caption"];
+                        throw new RuntimeException("API response omitted a valid answer for label '$caption'");
                     }
                     if ((float)$answer["noul"] >= $settings["threshold"]) {
-                        $selected_labels[] = $rule["label"];
+                        $selected_label_ids[] = $rule["label_id"];
                     }
                 }
 
-                $article["labels"] = self::merge_labels($article["labels"] ?? [], $selected_labels, (int)$owner_uid);
+                $selected_labels = array_map(
+                    fn($label_id) => $label_definitions[$label_id]["caption"],
+                    $selected_label_ids
+                );
+                $article["labels"] = self::merge_labels(
+                    $article["labels"] ?? [],
+                    $selected_label_ids,
+                    $label_definitions
+                );
                 $this->finish_attempt($guid, $owner_uid, "success", $selected_labels);
                 error_log("Jev_Auto_Tag: Selected labels [" . implode(", ", $selected_labels) . "] for guid=$guid");
             } catch (Throwable $e) {
@@ -302,15 +310,35 @@ JS;
 
         print '<fieldset><legend>' . __("Label Decisions") . '</legend>';
         print '<div class="form-group"><label for="jev-label-threshold" style="display:block">' . __("Label Probability Threshold") . '</label><input id="jev-label-threshold" dojoType="dijit.form.NumberSpinner" required="1" name="label_threshold" style="width:7em" value="' . $h($settings["threshold"]) . '" min="0" max="1" smallDelta="0.05"></div>';
-        print '<p class="text-muted">' . __("A label is applied when its Noul yes-probability meets this threshold. Missing labels are created automatically.") . '</p>';
+        print '<p class="text-muted">' . __("A label is applied when its Noul yes-probability meets this threshold. Deleted labels must be replaced before settings can be saved.") . '</p>';
         print '<div class="form-group"><h3>' . __("Label Rules") . '</h3>';
-        print '<p>' . __("For each rule, enter the exact label tt-rss should apply and the focused yes/no question Jev should answer.") . '</p>';
+        print '<p>' . __("Choose an existing tt-rss label, then enter the focused yes/no question Jev should answer. Create and color labels under Preferences > Labels.") . '</p>';
+        $available_labels = Labels::get_all((int)$_SESSION["uid"]);
+        print '<select id="jev-available-labels" hidden aria-hidden="true">';
+        foreach ($available_labels as $label) {
+            print '<option value="' . (int)$label["id"] . '">' . $h($label["caption"]) . '</option>';
+        }
+        print '</select>';
         print '<div id="jev-label-rule-list">';
         $rules = self::parse_label_rules($settings["label_rules"]);
-        if (!$rules) $rules = [["label" => "", "question" => ""]];
+        if (!$rules) $rules = [["label_id" => 0, "question" => ""]];
         foreach ($rules as $index => $rule) {
+            $selected_found = false;
             print '<div class="jev-label-rule">';
-            print '<label for="jev-label-name-' . $index . '"><span>' . __("Label name") . '</span><input id="jev-label-name-' . $index . '" type="text" class="jev-label-rule-name" placeholder="technology" value="' . $h($rule["label"]) . '"></label>';
+            print '<label for="jev-label-name-' . $index . '"><span>' . __("Label") . '</span><select id="jev-label-name-' . $index . '" class="jev-label-rule-name">';
+            print '<option value="">' . __("Choose a label...") . '</option>';
+            foreach ($available_labels as $label) {
+                $selected = (int)$label["id"] === (int)$rule["label_id"];
+                if ($selected) $selected_found = true;
+                print '<option value="' . (int)$label["id"] . '"' . ($selected ? ' selected' : '') . '>' . $h($label["caption"]) . '</option>';
+            }
+            if ($rule["label_id"] && !$selected_found) {
+                print '<option value="" selected>' . $h("Deleted label #" . $rule["label_id"] . "; choose a replacement") . '</option>';
+            }
+            if (!$available_labels && !$rule["label_id"]) {
+                print '<option value="" disabled>' . __("No labels available") . '</option>';
+            }
+            print '</select></label>';
             print '<label for="jev-label-question-' . $index . '"><span>' . __("Yes/no question") . '</span><input id="jev-label-question-' . $index . '" type="text" class="jev-label-rule-question" placeholder="Is this article primarily about technology?" value="' . $h($rule["question"]) . '"></label>';
             print '<button type="button" class="jev-label-rule-remove" title="' . __("Remove label rule") . '" aria-label="' . __("Remove label rule") . '" onclick="JevLabelRules.remove(this.parentNode)"><i class="material-icons">close</i></button>';
             print '</div>';
@@ -373,8 +401,14 @@ JS;
                 return $line !== "" && !str_starts_with($line, "#");
             }
         ));
-        if (!$active_lines || count(self::parse_label_rules($label_rules)) !== count($active_lines)) {
-            echo __("Settings not saved. Add at least one unique label and a yes/no question for every active line.");
+        $parsed_rules = self::parse_label_rules($label_rules);
+        $available_labels = Labels::get_as_hash((int)$_SESSION["uid"]);
+        $labels_are_valid = array_all(
+            $parsed_rules,
+            fn($rule) => isset($available_labels[$rule["label_id"]])
+        );
+        if (!$active_lines || count($parsed_rules) !== count($active_lines) || !$labels_are_valid) {
+            echo __("Settings not saved. Choose one existing, unique label and enter a yes/no question for every active line.");
             return;
         }
 

@@ -8,7 +8,7 @@ Synchronous tt-rss filter action that applies native tt-rss labels with TypeSafe
 2. Open **Preferences > Feeds > Jev Auto Label Settings**.
 3. Enter the TypeSafe API key and model, then use **Test API Key** to verify them.
 4. Configure the article text limit and Noul threshold.
-5. Click **Add Label Rule** for each label, then enter the exact label name and its focused yes/no question.
+5. Click **Add Label Rule**, choose an existing tt-rss label, and enter its focused yes/no question.
 6. Create a tt-rss filter and add the **Generate Jev Labels** action.
 
 Example rules:
@@ -19,7 +19,7 @@ Example rules:
 | business | Is the article primarily about companies, markets, or commercial activity? |
 | science | Is the article primarily about scientific research or discoveries? |
 
-Both fields are required. The exact label is applied when the Noul yes-probability for its question meets the configured threshold. Use the X button to remove a rule.
+Both fields are required. Rules store the label ID, so renaming a label requires no rule changes. If a label is deleted, its rule must be assigned a replacement before settings can be saved. The selected label is applied when the Noul yes-probability for its question meets the configured threshold. Use the X button to remove a rule.
 
 The article body is converted to plain text before it is truncated. The title and first 400 body characters are sent as separate fields in a structured state.
 
