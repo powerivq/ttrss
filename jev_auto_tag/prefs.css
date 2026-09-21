@@ -49,3 +49,84 @@
         grid-row: 2;
     }
 }
+
+.jev-feed-list {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.jev-feed-rule {
+    border: 1px solid var(--border-default);
+    border-radius: 0.35rem;
+}
+
+.jev-feed-rule summary {
+    align-items: center;
+    cursor: pointer;
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+}
+
+.jev-feed-rule-body {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0 1rem 1rem;
+}
+
+.jev-feed-decision {
+    background: color-mix(in srgb, var(--bg-base) 94%, currentColor 6%);
+    border-radius: 0.3rem;
+    padding: 1rem;
+}
+
+.jev-feed-decision h4 {
+    margin-top: 0;
+}
+
+.jev-feed-decision label span {
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.jev-feed-decision textarea {
+    box-sizing: border-box;
+    min-height: 5em;
+    width: 100%;
+}
+
+.jev-feed-decision textarea.jev-rank-levels {
+    min-height: 7em;
+}
+
+@media (max-width: 850px) {
+    .jev-feed-rule-body {
+        grid-template-columns: 1fr;
+    }
+}
+
+.jev-feed-rule summary::after {
+    content: "expand_more";
+    font-family: "Material Icons";
+    font-size: 1.25rem;
+    margin-left: auto;
+    transition: transform 150ms ease;
+}
+
+.jev-feed-rule[open] summary::after {
+    transform: rotate(180deg);
+}
+
+.jev-feed-rule summary {
+    list-style: none;
+}
+
+.jev-feed-rule summary::-webkit-details-marker {
+    display: none;
+}
+
+.jev-feed-options[hidden] {
+    display: none;
+}

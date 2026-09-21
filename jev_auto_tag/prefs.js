@@ -83,3 +83,11 @@ window.JevLabelRules = {
         return rules.join('\n');
     }
 };
+
+
+window.JevFeedDecisions = {
+    toggle(optionsId, enabled) {
+        const options = document.getElementById(optionsId);
+        if (options) options.hidden = !enabled;
+    }
+};
