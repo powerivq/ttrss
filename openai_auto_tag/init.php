@@ -1,8 +1,16 @@
 <?php
 class OpenAI_Auto_Tag extends Plugin {
     private $host;
+    private bool $database_initialized = false;
 
     private static function default_prompt() {
+        return "Choose every relevant label for the article from the permissible label list. " .
+            "Return only a JSON array of label names, for example [\"technology\", \"business\"]. " .
+            "Do not invent labels and do not include explanations. An empty array is allowed.\n\n" .
+            "Permissible labels:\n{permissible_labels}\n\nTitle:\n{title}\n\nArticle:\n{content}";
+    }
+
+    private static function legacy_default_prompt() {
         return "Choose every relevant tag for the article from the permissible tag list. " .
             "Return only a JSON array of tag names, for example [\"technology\", \"business\"]. " .
             "Do not invent tags and do not include explanations. An empty array is allowed.\n\n" .
@@ -10,7 +18,7 @@ class OpenAI_Auto_Tag extends Plugin {
     }
 
     function about() {
-        return [1.0, "Assign feed-specific tags using an OpenAI-compatible API", "powerivq"];
+        return [1.1, "Assign feed-specific labels using an OpenAI-compatible API", "powerivq"];
     }
 
     function api_version() {
@@ -24,13 +32,15 @@ class OpenAI_Auto_Tag extends Plugin {
             user_error("OpenAI_Auto_Tag: Only PostgreSQL is supported", E_USER_ERROR);
         }
 
-        $host->add_filter_action($this, "openai_auto_tag", __("Generate OpenAI Tags"));
+        $host->add_filter_action($this, "openai_auto_tag", __("Generate OpenAI Labels"));
         $host->add_hook($host::HOOK_PREFS_TAB, $this);
         $host->add_hook($host::HOOK_FETCH_FEED, $this);
     }
 
     private function init_database() {
+        if ($this->database_initialized) return;
         $this->host->get_pdo()->exec(file_get_contents(__DIR__ . "/init_pgsql.sql"));
+        $this->database_initialized = true;
     }
 
     function hook_fetch_feed($feed_data, $fetch_url, $owner_uid, $feed, $num, $auth_login, $auth_pass) {
@@ -52,7 +62,7 @@ class OpenAI_Auto_Tag extends Plugin {
                 "ON CONFLICT (guid, owner_uid) DO UPDATE SET failure_count = 0, last_failed = NULL"
             );
             $sth->execute([$guid, $owner_uid]);
-            error_log("OpenAI_Auto_Tag: Queued article guid=$guid for user $owner_uid");
+            error_log("OpenAI_Auto_Tag: Queued article for label selection guid=$guid for user $owner_uid");
         } catch (Exception $e) {
             error_log("OpenAI_Auto_Tag: Unable to queue article: " . $e->getMessage());
         }
@@ -74,29 +84,33 @@ class OpenAI_Auto_Tag extends Plugin {
 
         $sth = $pdo->prepare(
             "SELECT f.id, f.title, COALESCE(s.enabled, FALSE) AS enabled, " .
-            "COALESCE(s.prompt, ?) AS prompt, COALESCE(s.permissible_tags, '') AS permissible_tags " .
+            "COALESCE(s.prompt, ?) AS prompt, COALESCE(s.permissible_tags, '') AS permissible_labels " .
             "FROM ttrss_feeds f LEFT JOIN ttrss_auto_tag_feed_settings s " .
             "ON s.feed_id = f.id AND s.owner_uid = f.owner_uid " .
             "WHERE f.owner_uid = ? ORDER BY LOWER(f.title)"
         );
         $sth->execute([self::default_prompt(), $owner_uid]);
         $feeds = $sth->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($feeds as &$feed) {
+            if ($feed["prompt"] === self::legacy_default_prompt()) $feed["prompt"] = self::default_prompt();
+        }
+        unset($feed);
 
         $h = function($value) { return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8"); };
 
-        print '<div dojoType="dijit.layout.AccordionPane" title="<i class=\'material-icons\'>label</i> ' . __("OpenAI Auto Tag Settings") . '">';
+        print '<div dojoType="dijit.layout.AccordionPane" title="<i class=\'material-icons\'>label</i> ' . __("OpenAI Auto Label Settings") . '">';
         print "<h2>" . __("API Configuration") . "</h2>";
         print '<form dojoType="dijit.form.Form">';
         print '<script type="dojo/method" event="onSubmit" args="evt">evt.preventDefault(); if (this.validate()) { xhr.post("backend.php", this.getValues(), (reply) => { Notify.info(reply); }); }</script>';
         print \Controls\pluginhandler_tags($this, "save");
 
-        print '<div class="form-group"><input dojoType="dijit.form.ValidationTextBox" required="1" name="openai_api_key" style="width:30em" value="' . $h($api_key) . '">&nbsp;<label>' . __("API Key") . '</label></div>';
-        print '<div class="form-group"><input dojoType="dijit.form.ValidationTextBox" required="1" name="openai_base_url" style="width:30em" value="' . $h($base_url) . '">&nbsp;<label>' . __("API Base URL") . '</label></div>';
-        print '<div class="form-group"><input dojoType="dijit.form.ValidationTextBox" required="1" name="openai_model" style="width:20em" value="' . $h($model) . '">&nbsp;<label>' . __("Model") . '</label></div>';
-        print '<div class="form-group"><input dojoType="dijit.form.NumberSpinner" required="1" name="max_text_length" style="width:7em" value="' . $max_text_length . '" min="500" max="20000">&nbsp;<label>' . __("Max Context Length (Chars)") . '</label></div>';
+        print '<div class="form-group"><label style="display:block">' . __("API Key") . '</label><input dojoType="dijit.form.ValidationTextBox" required="1" name="openai_api_key" style="width:30em" value="' . $h($api_key) . '"></div>';
+        print '<div class="form-group"><label style="display:block">' . __("API Base URL") . '</label><input dojoType="dijit.form.ValidationTextBox" required="1" name="openai_base_url" style="width:30em" value="' . $h($base_url) . '"></div>';
+        print '<div class="form-group"><label style="display:block">' . __("Model") . '</label><input dojoType="dijit.form.ValidationTextBox" required="1" name="openai_model" style="width:20em" value="' . $h($model) . '"></div>';
+        print '<div class="form-group"><label style="display:block">' . __("Max Context Length (Chars)") . '</label><input dojoType="dijit.form.NumberSpinner" required="1" name="max_text_length" style="width:7em" value="' . $max_text_length . '" min="500" max="20000"></div>';
 
         print "<h2>" . __("Feed Rules") . "</h2>";
-        print '<p>' . __("Enable and configure tagging independently for each feed. Enter one permissible tag per line (commas are also accepted).") . '</p>';
+        print '<p>' . __("Enable and configure labeling independently for each feed. Enter one permissible label per line (commas are also accepted). Missing labels are created automatically.") . '</p>';
 
         foreach ($feeds as $feed) {
             $id = (int)$feed["id"];
@@ -104,12 +118,12 @@ class OpenAI_Auto_Tag extends Plugin {
             print '<fieldset style="margin:1em 0;padding:1em;border:1px solid var(--border-default)">';
             print '<legend><strong>' . $h($feed["title"]) . '</strong></legend>';
             print '<input dojoType="dijit.form.TextBox" type="hidden" name="feed_ids[]" value="' . $id . '">';
-            print '<label><input dojoType="dijit.form.CheckBox" type="checkbox" name="feed_enabled_' . $id . '" value="1"' . $checked . '> ' . __("Enable automatic tag selection for this feed") . '</label>';
-            print '<div class="form-group" style="margin-top:1em"><label style="display:block">' . __("Permissible Tags") . '</label>';
-            print '<textarea dojoType="dijit.form.SimpleTextarea" name="feed_tags_' . $id . '" style="width:90%;height:7em;font-family:monospace">' . $h($feed["permissible_tags"]) . '</textarea></div>';
+            print '<label><input dojoType="dijit.form.CheckBox" type="checkbox" name="feed_enabled_' . $id . '" value="1"' . $checked . '> ' . __("Enable automatic label selection for this feed") . '</label>';
+            print '<div class="form-group" style="margin-top:1em"><label style="display:block">' . __("Permissible Labels") . '</label>';
+            print '<textarea dojoType="dijit.form.SimpleTextarea" name="feed_labels_' . $id . '" style="width:90%;height:7em;font-family:monospace">' . $h($feed["permissible_labels"]) . '</textarea></div>';
             print '<div class="form-group"><label style="display:block">' . __("Prompt Template") . '</label>';
             print '<textarea dojoType="dijit.form.SimpleTextarea" name="feed_prompt_' . $id . '" style="width:90%;height:14em;font-family:monospace">' . $h($feed["prompt"]) . '</textarea>';
-            print '<p class="text-muted">' . __("Available placeholders: {title}, {content}, {permissible_tags}") . '</p></div>';
+            print '<p class="text-muted">' . __("Available placeholders: {title}, {content}, {permissible_labels} ({permissible_tags} remains supported)") . '</p></div>';
             print '</fieldset>';
         }
 
@@ -143,9 +157,9 @@ class OpenAI_Auto_Tag extends Plugin {
 
                 $enabled = isset($_POST["feed_enabled_$feed_id"]);
                 $prompt = trim($_POST["feed_prompt_$feed_id"] ?? self::default_prompt());
-                $tags = trim($_POST["feed_tags_$feed_id"] ?? "");
+                $labels = trim($_POST["feed_labels_$feed_id"] ?? "");
                 if ($prompt === "") $prompt = self::default_prompt();
-                $upsert->execute([$owner_uid, $feed_id, $enabled ? "true" : "false", $prompt, $tags]);
+                $upsert->execute([$owner_uid, $feed_id, $enabled ? "true" : "false", $prompt, $labels]);
             }
             $pdo->commit();
         } catch (Exception $e) {

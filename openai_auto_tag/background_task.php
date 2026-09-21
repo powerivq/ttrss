@@ -12,6 +12,20 @@ function auto_tag_db() {
     ]);
 }
 
+function auto_label_default_prompt() {
+    return "Choose every relevant label for the article from the permissible label list. " .
+        "Return only a JSON array of label names, for example [\"technology\", \"business\"]. " .
+        "Do not invent labels and do not include explanations. An empty array is allowed.\n\n" .
+        "Permissible labels:\n{permissible_labels}\n\nTitle:\n{title}\n\nArticle:\n{content}";
+}
+
+function auto_tag_legacy_default_prompt() {
+    return "Choose every relevant tag for the article from the permissible tag list. " .
+        "Return only a JSON array of tag names, for example [\"technology\", \"business\"]. " .
+        "Do not invent tags and do not include explanations. An empty array is allowed.\n\n" .
+        "Permissible tags:\n{permissible_tags}\n\nTitle:\n{title}\n\nArticle:\n{content}";
+}
+
 function auto_tag_global_settings($pdo, $owner_uid) {
     $sth = $pdo->prepare("SELECT content FROM ttrss_plugin_storage WHERE owner_uid = ? AND name = ?");
     $sth->execute([$owner_uid, "OpenAI_Auto_Tag"]);
@@ -29,25 +43,25 @@ function auto_tag_global_settings($pdo, $owner_uid) {
     ];
 }
 
-function auto_tag_parse_allowlist($value) {
+function auto_label_parse_allowlist($value) {
     $parts = preg_split('/[,\r\n]+/', (string)$value);
-    $tags = [];
+    $labels = [];
     $seen = [];
     foreach ($parts as $part) {
-        $tag = trim($part);
-        $key = mb_strtolower($tag);
-        if ($tag !== "" && mb_strlen($tag) <= 250 && !isset($seen[$key])) {
-            $tags[] = $tag;
+        $label = trim($part);
+        $key = mb_strtolower($label);
+        if ($label !== "" && mb_strlen($label) <= 250 && !isset($seen[$key])) {
+            $labels[] = $label;
             $seen[$key] = true;
         }
     }
-    return $tags;
+    return $labels;
 }
 
 function auto_tag_article_and_rule($pdo, $guid, $owner_uid) {
     $sth = $pdo->prepare(
-        "SELECT e.id, e.title, e.content, ue.int_id, ue.feed_id, " .
-        "s.enabled, s.prompt, s.permissible_tags " .
+        "SELECT e.id, e.title, e.content, ue.feed_id, " .
+        "s.enabled, s.prompt, s.permissible_tags AS permissible_labels " .
         "FROM ttrss_entries e JOIN ttrss_user_entries ue ON ue.ref_id = e.id " .
         "LEFT JOIN ttrss_auto_tag_feed_settings s " .
         "ON s.feed_id = ue.feed_id AND s.owner_uid = ue.owner_uid " .
@@ -102,46 +116,67 @@ function auto_tag_call_api($prompt, $settings) {
     return ["success" => true, "content" => trim($content)];
 }
 
-function auto_tag_parse_response($content, $permissible_tags) {
+function auto_label_parse_response($content, $permissible_labels) {
     $content = preg_replace('/^```(?:json)?\s*|\s*```$/i', '', trim($content));
     $decoded = json_decode($content, true);
-    if (is_array($decoded) && isset($decoded["tags"]) && is_array($decoded["tags"])) {
+    if (is_array($decoded) && isset($decoded["labels"]) && is_array($decoded["labels"])) {
+        $decoded = $decoded["labels"];
+    } else if (is_array($decoded) && isset($decoded["tags"]) && is_array($decoded["tags"])) {
+        // Accept the legacy response envelope for existing custom prompts.
         $decoded = $decoded["tags"];
     }
     if (!is_array($decoded) || !array_is_list($decoded)) return null;
 
     $allowed = [];
-    foreach ($permissible_tags as $tag) $allowed[mb_strtolower($tag)] = $tag;
+    foreach ($permissible_labels as $label) $allowed[mb_strtolower($label)] = $label;
 
     $selected = [];
-    foreach ($decoded as $tag) {
-        if (!is_string($tag)) continue;
-        $key = mb_strtolower(trim($tag));
+    foreach ($decoded as $label) {
+        if (!is_string($label)) continue;
+        $key = mb_strtolower(trim($label));
         if (isset($allowed[$key])) $selected[$key] = $allowed[$key];
     }
     return array_values($selected);
 }
 
-function auto_tag_apply($pdo, $article_id, $article_int_id, $owner_uid, $selected_tags) {
+function auto_label_apply($pdo, $article_id, $owner_uid, $selected_labels) {
+    if (!$selected_labels) return;
+
     $pdo->beginTransaction();
     try {
-        $existing_sth = $pdo->prepare("SELECT tag_name FROM ttrss_tags WHERE post_int_id = ? AND owner_uid = ?");
-        $existing_sth->execute([$article_int_id, $owner_uid]);
-        $existing = [];
-        while ($row = $existing_sth->fetch()) $existing[mb_strtolower($row["tag_name"])] = $row["tag_name"];
+        $find = $pdo->prepare(
+            "SELECT id FROM ttrss_labels2 WHERE LOWER(caption) = LOWER(?) AND owner_uid = ? LIMIT 1"
+        );
+        $create = $pdo->prepare(
+            "INSERT INTO ttrss_labels2 (caption, owner_uid, fg_color, bg_color) " .
+            "VALUES (?, ?, '', '') ON CONFLICT DO NOTHING RETURNING id"
+        );
+        $attach = $pdo->prepare(
+            "INSERT INTO ttrss_user_labels2 (label_id, article_id) " .
+            "SELECT ?, ? WHERE NOT EXISTS (" .
+                "SELECT 1 FROM ttrss_user_labels2 WHERE label_id = ? AND article_id = ?" .
+            ")"
+        );
 
-        $insert = $pdo->prepare("INSERT INTO ttrss_tags (post_int_id, owner_uid, tag_name) VALUES (?, ?, ?)");
-        foreach ($selected_tags as $tag) {
-            $key = mb_strtolower($tag);
-            if (!isset($existing[$key])) {
-                $insert->execute([$article_int_id, $owner_uid, $tag]);
-                $existing[$key] = $tag;
+        foreach ($selected_labels as $caption) {
+            $find->execute([$caption, $owner_uid]);
+            $label_id = $find->fetchColumn();
+            if (!$label_id) {
+                $create->execute([$caption, $owner_uid]);
+                $label_id = $create->fetchColumn();
             }
+            if (!$label_id) {
+                $find->execute([$caption, $owner_uid]);
+                $label_id = $find->fetchColumn();
+            }
+            if (!$label_id) throw new RuntimeException("Unable to create label '$caption'");
+            $attach->execute([(int)$label_id, $article_id, (int)$label_id, $article_id]);
         }
 
-        natcasesort($existing);
-        $update = $pdo->prepare("UPDATE ttrss_user_entries SET tag_cache = ? WHERE ref_id = ? AND owner_uid = ?");
-        $update->execute([implode(",", array_values($existing)), $article_id, $owner_uid]);
+        $update = $pdo->prepare(
+            "UPDATE ttrss_user_entries SET label_cache = '' WHERE ref_id = ? AND owner_uid = ?"
+        );
+        $update->execute([$article_id, $owner_uid]);
         $pdo->commit();
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -163,9 +198,9 @@ function auto_tag_process($pdo, $guid, $owner_uid) {
         return ["success" => true];
     }
 
-    $permissible_tags = auto_tag_parse_allowlist($article["permissible_tags"]);
-    if (!$permissible_tags) {
-        return ["success" => false, "count_failure" => true, "message" => "Feed has an empty permissible tag list"];
+    $permissible_labels = auto_label_parse_allowlist($article["permissible_labels"]);
+    if (!$permissible_labels) {
+        return ["success" => false, "count_failure" => true, "message" => "Feed has an empty permissible label list"];
     }
 
     $content = str_replace(["<br>", "<br/>", "<br />", "</p>"], "\n", $article["content"] ?? "");
@@ -173,23 +208,26 @@ function auto_tag_process($pdo, $guid, $owner_uid) {
     $content = mb_substr($content, 0, $settings["max_text_length"]);
     if ($content === "") return ["success" => false, "count_failure" => true, "message" => "Article content is empty"];
 
+    $prompt_template = $article["prompt"] === auto_tag_legacy_default_prompt()
+        ? auto_label_default_prompt()
+        : $article["prompt"];
     $prompt = str_replace(
-        ["{title}", "{content}", "{permissible_tags}"],
-        [$article["title"] ?? "", $content, implode("\n", $permissible_tags)],
-        $article["prompt"]
+        ["{title}", "{content}", "{permissible_labels}", "{permissible_tags}"],
+        [$article["title"] ?? "", $content, implode("\n", $permissible_labels), implode("\n", $permissible_labels)],
+        $prompt_template
     );
 
     error_log("OpenAI_Auto_Tag: Calling model {$settings['model']} for guid=$guid, feed={$article['feed_id']}");
     $response = auto_tag_call_api($prompt, $settings);
     if (!$response["success"]) return $response;
 
-    $selected_tags = auto_tag_parse_response($response["content"], $permissible_tags);
-    if ($selected_tags === null) {
-        return ["success" => false, "count_failure" => true, "message" => "Model response was not a JSON tag array"];
+    $selected_labels = auto_label_parse_response($response["content"], $permissible_labels);
+    if ($selected_labels === null) {
+        return ["success" => false, "count_failure" => true, "message" => "Model response was not a JSON label array"];
     }
 
-    auto_tag_apply($pdo, $article["id"], $article["int_id"], $owner_uid, $selected_tags);
-    error_log("OpenAI_Auto_Tag: Added tags [" . implode(", ", $selected_tags) . "] to guid=$guid");
+    auto_label_apply($pdo, $article["id"], $owner_uid, $selected_labels);
+    error_log("OpenAI_Auto_Tag: Applied labels [" . implode(", ", $selected_labels) . "] to guid=$guid");
     return ["success" => true];
 }
 

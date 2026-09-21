@@ -6,9 +6,10 @@ class Jev_Auto_Tag extends Plugin {
     private const DEFAULT_MAX_TEXT_LENGTH = 400;
 
     private $host;
+    private bool $database_initialized = false;
 
     function about() {
-        return [1.1, "Assign tags synchronously using TypeSafe Jev", "powerivq"];
+        return [1.2, "Assign labels synchronously using TypeSafe Jev", "powerivq"];
     }
 
     function api_version() {
@@ -30,12 +31,14 @@ class Jev_Auto_Tag extends Plugin {
             user_error("Jev_Auto_Tag: Only PostgreSQL is supported", E_USER_ERROR);
         }
 
-        $host->add_filter_action($this, "jev_auto_tag", __("Generate Jev Tags"));
+        $host->add_filter_action($this, "jev_auto_tag", __("Generate Jev Labels"));
         $host->add_hook($host::HOOK_PREFS_TAB, $this);
     }
 
     private function init_database() {
+        if ($this->database_initialized) return;
         $this->host->get_pdo()->exec(file_get_contents(__DIR__ . "/init_pgsql.sql"));
+        $this->database_initialized = true;
     }
 
     private function settings() {
@@ -43,13 +46,13 @@ class Jev_Auto_Tag extends Plugin {
             "api_key" => trim($this->host->get($this, "typesafe_api_key", "")),
             "base_url" => rtrim(trim($this->host->get($this, "typesafe_base_url", self::DEFAULT_BASE_URL)), "/"),
             "model" => trim($this->host->get($this, "jev_model", self::DEFAULT_MODEL)),
-            "threshold" => max(0.0, min(1.0, (float)$this->host->get($this, "tag_threshold", self::DEFAULT_THRESHOLD))),
+            "threshold" => max(0.0, min(1.0, (float)$this->host->get($this, "label_threshold", $this->host->get($this, "tag_threshold", self::DEFAULT_THRESHOLD)))),
             "max_text_length" => max(100, min(5000, (int)$this->host->get($this, "max_text_length", self::DEFAULT_MAX_TEXT_LENGTH))),
-            "tag_rules" => $this->host->get($this, "tag_rules", ""),
+            "label_rules" => $this->host->get($this, "label_rules", $this->host->get($this, "tag_rules", "")),
         ];
     }
 
-    private static function parse_tag_rules($value) {
+    private static function parse_label_rules($value) {
         $rules = [];
         $seen = [];
 
@@ -58,14 +61,14 @@ class Jev_Auto_Tag extends Plugin {
             if ($line === "" || str_starts_with($line, "#")) continue;
 
             $parts = array_map("trim", explode("|", $line, 2));
-            $tag = $parts[0];
+            $label = $parts[0];
             $question = $parts[1] ?? "";
-            $key = mb_strtolower($tag);
+            $key = mb_strtolower($label);
 
-            if ($tag === "" || $question === "" || mb_strlen($tag) > 250 || isset($seen[$key])) continue;
+            if ($label === "" || $question === "" || mb_strlen($label) > 250 || isset($seen[$key])) continue;
 
             $rules[] = [
-                "tag" => $tag,
+                "label" => $label,
                 "question" => $question,
             ];
             $seen[$key] = true;
@@ -82,21 +85,21 @@ class Jev_Auto_Tag extends Plugin {
 
     private function claim_attempt($guid, $owner_uid, $model, $config_hash) {
         $sth = $this->host->get_pdo()->prepare(
-            "INSERT INTO ttrss_jev_tag_attempts (guid, owner_uid, model, config_hash) " .
+            "INSERT INTO ttrss_jev_label_attempts (guid, owner_uid, model, config_hash) " .
             "VALUES (?, ?, ?, ?) ON CONFLICT (guid, owner_uid) DO NOTHING RETURNING guid"
         );
         $sth->execute([$guid, $owner_uid, $model, $config_hash]);
         return (bool)$sth->fetchColumn();
     }
 
-    private function finish_attempt($guid, $owner_uid, $status, $selected_tags = [], $error = null) {
+    private function finish_attempt($guid, $owner_uid, $status, $selected_labels = [], $error = null) {
         $sth = $this->host->get_pdo()->prepare(
-            "UPDATE ttrss_jev_tag_attempts SET completed_at = NOW(), status = ?, selected_tags = ?, error = ? " .
+            "UPDATE ttrss_jev_label_attempts SET completed_at = NOW(), status = ?, selected_labels = ?, error = ? " .
             "WHERE guid = ? AND owner_uid = ?"
         );
         $sth->execute([
             $status,
-            json_encode(array_values($selected_tags), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            json_encode(array_values($selected_labels), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             $error === null ? null : mb_substr($error, 0, 2000),
             $guid,
             $owner_uid,
@@ -154,13 +157,35 @@ class Jev_Auto_Tag extends Plugin {
         return $decoded;
     }
 
-    private static function merge_tags($existing_tags, $selected_tags) {
-        $tags = [];
-        foreach ([...(array)$existing_tags, ...$selected_tags] as $tag) {
-            $tag = trim((string)$tag);
-            if ($tag !== "") $tags[mb_strtolower($tag)] = $tag;
+    private static function merge_labels($existing_labels, $selected_labels, $owner_uid) {
+        $labels = array_values((array)$existing_labels);
+        $seen = [];
+        foreach ($labels as $label) {
+            if (is_array($label) && isset($label[1])) $seen[mb_strtolower((string)$label[1])] = true;
         }
-        return array_values($tags);
+
+        foreach ($selected_labels as $caption) {
+            $caption = trim((string)$caption);
+            $key = mb_strtolower($caption);
+            if ($caption === "" || isset($seen[$key])) continue;
+
+            $label_id = Labels::find_id($caption, $owner_uid);
+            if (!$label_id) {
+                Labels::create($caption, "", "", $owner_uid);
+                $label_id = Labels::find_id($caption, $owner_uid);
+            }
+            if (!$label_id) throw new RuntimeException("Unable to create label '$caption'");
+
+            $definition = Labels::get_as_hash($owner_uid)[$label_id];
+            $labels[] = [
+                Labels::label_to_feed_id($label_id),
+                $definition["caption"],
+                $definition["fg_color"],
+                $definition["bg_color"],
+            ];
+            $seen[mb_strtolower($definition["caption"])] = true;
+        }
+        return $labels;
     }
 
     function hook_article_filter_action($article, $action) {
@@ -173,13 +198,13 @@ class Jev_Auto_Tag extends Plugin {
         try {
             $this->init_database();
             $settings = $this->settings();
-            $rules = self::parse_tag_rules($settings["tag_rules"]);
+            $rules = self::parse_label_rules($settings["label_rules"]);
             $content = self::article_text($article["content"] ?? "", $settings["max_text_length"]);
 
             if ($settings["api_key"] === "" || $settings["base_url"] === "" || $settings["model"] === "") {
                 throw new RuntimeException("API configuration is incomplete");
             }
-            if (!$rules) throw new RuntimeException("No tag rules are configured");
+            if (!$rules) throw new RuntimeException("No label rules are configured");
             if ($content === "") throw new RuntimeException("Article content is empty");
 
             $state = [
@@ -188,7 +213,7 @@ class Jev_Auto_Tag extends Plugin {
             ];
             $questions = [];
             foreach ($rules as $index => $rule) {
-                $questions["tag_$index"] = [
+                $questions["label_$index"] = [
                     "type" => "noul",
                     "instructions" => $rule["question"],
                 ];
@@ -206,23 +231,23 @@ class Jev_Auto_Tag extends Plugin {
             }
 
             try {
-                error_log("Jev_Auto_Tag: Calling {$settings['model']} for guid=$guid with " . count($questions) . " tag questions");
+                error_log("Jev_Auto_Tag: Calling {$settings['model']} for guid=$guid with " . count($questions) . " label questions");
                 $response = self::call_api($settings, $state, $questions);
-                $selected_tags = [];
+                $selected_labels = [];
 
                 foreach ($rules as $index => $rule) {
-                    $answer = $response["answers"]["tag_$index"] ?? null;
+                    $answer = $response["answers"]["label_$index"] ?? null;
                     if (!is_array($answer) || ($answer["type"] ?? null) !== "noul" || !is_numeric($answer["noul"] ?? null)) {
-                        throw new RuntimeException("API response omitted a valid answer for tag '{$rule['tag']}'");
+                        throw new RuntimeException("API response omitted a valid answer for label '{$rule['label']}'");
                     }
                     if ((float)$answer["noul"] >= $settings["threshold"]) {
-                        $selected_tags[] = $rule["tag"];
+                        $selected_labels[] = $rule["label"];
                     }
                 }
 
-                $article["tags"] = self::merge_tags($article["tags"] ?? [], $selected_tags);
-                $this->finish_attempt($guid, $owner_uid, "success", $selected_tags);
-                error_log("Jev_Auto_Tag: Selected tags [" . implode(", ", $selected_tags) . "] for guid=$guid");
+                $article["labels"] = self::merge_labels($article["labels"] ?? [], $selected_labels, (int)$owner_uid);
+                $this->finish_attempt($guid, $owner_uid, "success", $selected_labels);
+                error_log("Jev_Auto_Tag: Selected labels [" . implode(", ", $selected_labels) . "] for guid=$guid");
             } catch (Throwable $e) {
                 $this->finish_attempt($guid, $owner_uid, "failed", [], $e->getMessage());
                 error_log("Jev_Auto_Tag: Call failed for guid=$guid: " . $e->getMessage());
@@ -262,10 +287,10 @@ xhr.post('backend.php', values, function(reply) {
 });
 JS;
 
-        print '<div dojoType="dijit.layout.AccordionPane" title="<i class=\'material-icons\'>label</i> ' . __("Jev Auto Tag Settings") . '">';
-        print '<p>' . __("Create a filter with the Generate Jev Tags action. Each article is sent at most once; every configured tag is evaluated as an independent yes/no Noul question in one synchronous request.") . '</p>';
+        print '<div dojoType="dijit.layout.AccordionPane" title="<i class=\'material-icons\'>label</i> ' . __("Jev Auto Label Settings") . '">';
+        print '<p>' . __("Create a filter with the Generate Jev Labels action. Each article is sent at most once; every configured label is evaluated as an independent yes/no Noul question in one synchronous request.") . '</p>';
         print '<form id="jev-auto-tag-form" dojoType="dijit.form.Form">';
-        print '<script type="dojo/method" event="onSubmit" args="evt">evt.preventDefault(); var tagRules = JevTagRules.serialize(); if (this.validate() && tagRules !== false) { var values = this.getValues(); values.tag_rules = tagRules; xhr.post("backend.php", values, (reply) => { Notify.info(reply); }); }</script>';
+        print '<script type="dojo/method" event="onSubmit" args="evt">evt.preventDefault(); var labelRules = JevLabelRules.serialize(); if (this.validate() && labelRules !== false) { var values = this.getValues(); values.label_rules = labelRules; xhr.post("backend.php", values, (reply) => { Notify.info(reply); }); }</script>';
         print \Controls\pluginhandler_tags($this, "save");
 
         print '<fieldset><legend>' . __("TypeSafe Connection") . '</legend>';
@@ -275,23 +300,23 @@ JS;
         print '<button dojoType="dijit.form.Button" type="button" onClick="' . $h($test_script) . '"><i class="material-icons">key</i> ' . __("Test API Key") . '</button>';
         print '</fieldset>';
 
-        print '<fieldset><legend>' . __("Tag Decisions") . '</legend>';
-        print '<div class="form-group"><label for="jev-tag-threshold" style="display:block">' . __("Tag Probability Threshold") . '</label><input id="jev-tag-threshold" dojoType="dijit.form.NumberSpinner" required="1" name="tag_threshold" style="width:7em" value="' . $h($settings["threshold"]) . '" min="0" max="1" smallDelta="0.05"></div>';
-        print '<p class="text-muted">' . __("A tag is added when its Noul yes-probability meets this threshold.") . '</p>';
-        print '<div class="form-group"><h3>' . __("Tag Rules") . '</h3>';
-        print '<p>' . __("For each rule, enter the exact tag tt-rss should apply and the focused yes/no question Jev should answer.") . '</p>';
-        print '<div id="jev-tag-rule-list">';
-        $rules = self::parse_tag_rules($settings["tag_rules"]);
-        if (!$rules) $rules = [["tag" => "", "question" => ""]];
+        print '<fieldset><legend>' . __("Label Decisions") . '</legend>';
+        print '<div class="form-group"><label for="jev-label-threshold" style="display:block">' . __("Label Probability Threshold") . '</label><input id="jev-label-threshold" dojoType="dijit.form.NumberSpinner" required="1" name="label_threshold" style="width:7em" value="' . $h($settings["threshold"]) . '" min="0" max="1" smallDelta="0.05"></div>';
+        print '<p class="text-muted">' . __("A label is applied when its Noul yes-probability meets this threshold. Missing labels are created automatically.") . '</p>';
+        print '<div class="form-group"><h3>' . __("Label Rules") . '</h3>';
+        print '<p>' . __("For each rule, enter the exact label tt-rss should apply and the focused yes/no question Jev should answer.") . '</p>';
+        print '<div id="jev-label-rule-list">';
+        $rules = self::parse_label_rules($settings["label_rules"]);
+        if (!$rules) $rules = [["label" => "", "question" => ""]];
         foreach ($rules as $index => $rule) {
-            print '<div class="jev-tag-rule">';
-            print '<label for="jev-tag-name-' . $index . '"><span>' . __("Tag name") . '</span><input id="jev-tag-name-' . $index . '" type="text" class="jev-tag-rule-name" placeholder="technology" value="' . $h($rule["tag"]) . '"></label>';
-            print '<label for="jev-tag-question-' . $index . '"><span>' . __("Yes/no question") . '</span><input id="jev-tag-question-' . $index . '" type="text" class="jev-tag-rule-question" placeholder="Is this article primarily about technology?" value="' . $h($rule["question"]) . '"></label>';
-            print '<button type="button" class="jev-tag-rule-remove" title="' . __("Remove tag rule") . '" aria-label="' . __("Remove tag rule") . '" onclick="JevTagRules.remove(this.parentNode)"><i class="material-icons">close</i></button>';
+            print '<div class="jev-label-rule">';
+            print '<label for="jev-label-name-' . $index . '"><span>' . __("Label name") . '</span><input id="jev-label-name-' . $index . '" type="text" class="jev-label-rule-name" placeholder="technology" value="' . $h($rule["label"]) . '"></label>';
+            print '<label for="jev-label-question-' . $index . '"><span>' . __("Yes/no question") . '</span><input id="jev-label-question-' . $index . '" type="text" class="jev-label-rule-question" placeholder="Is this article primarily about technology?" value="' . $h($rule["question"]) . '"></label>';
+            print '<button type="button" class="jev-label-rule-remove" title="' . __("Remove label rule") . '" aria-label="' . __("Remove label rule") . '" onclick="JevLabelRules.remove(this.parentNode)"><i class="material-icons">close</i></button>';
             print '</div>';
         }
         print '</div>';
-        print '<button type="button" class="alt-primary" onclick="JevTagRules.add()"><i class="material-icons">add</i> ' . __("Add Tag Rule") . '</button></div>';
+        print '<button type="button" class="alt-primary" onclick="JevLabelRules.add()"><i class="material-icons">add</i> ' . __("Add Label Rule") . '</button></div>';
         print '</fieldset>';
 
         print '<fieldset><legend>' . __("Article Input") . '</legend>';
@@ -340,25 +365,25 @@ JS;
     function save() {
         $this->init_database();
 
-        $tag_rules = trim($_POST["tag_rules"] ?? "");
+        $label_rules = trim($_POST["label_rules"] ?? "");
         $active_lines = array_values(array_filter(
-            preg_split('/\R/u', $tag_rules),
+            preg_split('/\R/u', $label_rules),
             function($line) {
                 $line = trim($line);
                 return $line !== "" && !str_starts_with($line, "#");
             }
         ));
-        if (!$active_lines || count(self::parse_tag_rules($tag_rules)) !== count($active_lines)) {
-            echo __("Settings not saved. Add at least one unique tag and a yes/no question for every active line.");
+        if (!$active_lines || count(self::parse_label_rules($label_rules)) !== count($active_lines)) {
+            echo __("Settings not saved. Add at least one unique label and a yes/no question for every active line.");
             return;
         }
 
         $this->host->set($this, "typesafe_api_key", trim($_POST["typesafe_api_key"] ?? ""));
         $this->host->set($this, "typesafe_base_url", rtrim(trim($_POST["typesafe_base_url"] ?? self::DEFAULT_BASE_URL), "/"));
         $this->host->set($this, "jev_model", trim($_POST["jev_model"] ?? self::DEFAULT_MODEL));
-        $this->host->set($this, "tag_threshold", max(0.0, min(1.0, (float)($_POST["tag_threshold"] ?? self::DEFAULT_THRESHOLD))));
+        $this->host->set($this, "label_threshold", max(0.0, min(1.0, (float)($_POST["label_threshold"] ?? self::DEFAULT_THRESHOLD))));
         $this->host->set($this, "max_text_length", max(100, min(5000, (int)($_POST["max_text_length"] ?? self::DEFAULT_MAX_TEXT_LENGTH))));
-        $this->host->set($this, "tag_rules", $tag_rules);
+        $this->host->set($this, "label_rules", $label_rules);
 
         echo __("Settings saved.");
     }
