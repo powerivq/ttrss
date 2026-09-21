@@ -1,0 +1,50 @@
+#jev-tag-rule-list {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+}
+
+.jev-tag-rule {
+    display: grid;
+    grid-template-columns: minmax(10rem, 0.7fr) minmax(20rem, 2fr) auto;
+    gap: 0.75rem;
+    align-items: end;
+}
+
+.jev-tag-rule label span {
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.jev-tag-rule input {
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.jev-tag-rule-remove {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    display: inline-flex;
+    height: 2rem;
+    justify-content: center;
+    opacity: 0.7;
+    width: 2rem;
+}
+
+.jev-tag-rule-remove:hover,
+.jev-tag-rule-remove:focus {
+    opacity: 1;
+}
+
+@media (max-width: 700px) {
+    .jev-tag-rule {
+        grid-template-columns: 1fr auto;
+    }
+
+    .jev-tag-rule label:nth-child(2) {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+}

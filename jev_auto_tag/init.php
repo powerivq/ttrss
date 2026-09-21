@@ -3,32 +3,24 @@ class Jev_Auto_Tag extends Plugin {
     private const DEFAULT_BASE_URL = "https://api.typesafe.ai/v1";
     private const DEFAULT_MODEL = "jev-latest";
     private const DEFAULT_THRESHOLD = 0.7;
-    private const DEFAULT_MAX_TEXT_LENGTH = 12000;
+    private const DEFAULT_MAX_TEXT_LENGTH = 400;
 
     private $host;
 
-    private static function default_state_template() {
-        return "Title:\n{title}\n\nArticle:\n{content}";
-    }
-
-    private static function default_question_template() {
-        return "Is this article primarily and materially about the tag \"{tag}\"?";
-    }
-
-    private static function default_true_criteria() {
-        return "The article's main subject substantially matches this tag definition: {description}";
-    }
-
-    private static function default_false_criteria() {
-        return "The tag is absent, incidental, or only briefly mentioned: {description}";
-    }
-
     function about() {
-        return [1.0, "Assign tags synchronously using TypeSafe Jev", "powerivq"];
+        return [1.1, "Assign tags synchronously using TypeSafe Jev", "powerivq"];
     }
 
     function api_version() {
         return 2;
+    }
+
+    function get_prefs_js() {
+        return file_get_contents(__DIR__ . "/prefs.js");
+    }
+
+    function get_prefs_css() {
+        return file_get_contents(__DIR__ . "/prefs.css");
     }
 
     function init($host) {
@@ -52,11 +44,7 @@ class Jev_Auto_Tag extends Plugin {
             "base_url" => rtrim(trim($this->host->get($this, "typesafe_base_url", self::DEFAULT_BASE_URL)), "/"),
             "model" => trim($this->host->get($this, "jev_model", self::DEFAULT_MODEL)),
             "threshold" => max(0.0, min(1.0, (float)$this->host->get($this, "tag_threshold", self::DEFAULT_THRESHOLD))),
-            "max_text_length" => max(500, min(100000, (int)$this->host->get($this, "max_text_length", self::DEFAULT_MAX_TEXT_LENGTH))),
-            "state_template" => $this->host->get($this, "state_template", self::default_state_template()),
-            "question_template" => $this->host->get($this, "question_template", self::default_question_template()),
-            "true_criteria" => $this->host->get($this, "true_criteria", self::default_true_criteria()),
-            "false_criteria" => $this->host->get($this, "false_criteria", self::default_false_criteria()),
+            "max_text_length" => max(100, min(5000, (int)$this->host->get($this, "max_text_length", self::DEFAULT_MAX_TEXT_LENGTH))),
             "tag_rules" => $this->host->get($this, "tag_rules", ""),
         ];
     }
@@ -71,29 +59,19 @@ class Jev_Auto_Tag extends Plugin {
 
             $parts = array_map("trim", explode("|", $line, 2));
             $tag = $parts[0];
-            $description = $parts[1] ?? $tag;
+            $question = $parts[1] ?? "";
             $key = mb_strtolower($tag);
 
-            if ($tag === "" || mb_strlen($tag) > 250 || isset($seen[$key])) continue;
+            if ($tag === "" || $question === "" || mb_strlen($tag) > 250 || isset($seen[$key])) continue;
 
             $rules[] = [
                 "tag" => $tag,
-                "description" => $description !== "" ? $description : $tag,
+                "question" => $question,
             ];
             $seen[$key] = true;
         }
 
         return $rules;
-    }
-
-    private static function render_template($template, $values) {
-        $search = [];
-        $replace = [];
-        foreach ($values as $key => $value) {
-            $search[] = "{" . $key . "}";
-            $replace[] = $value;
-        }
-        return str_replace($search, $replace, $template);
     }
 
     private static function article_text($content, $max_length) {
@@ -204,30 +182,21 @@ class Jev_Auto_Tag extends Plugin {
             if (!$rules) throw new RuntimeException("No tag rules are configured");
             if ($content === "") throw new RuntimeException("Article content is empty");
 
-            $state = self::render_template($settings["state_template"], [
+            $state = [
                 "title" => (string)($article["title"] ?? ""),
                 "content" => $content,
-            ]);
+            ];
             $questions = [];
             foreach ($rules as $index => $rule) {
-                $values = ["tag" => $rule["tag"], "description" => $rule["description"]];
                 $questions["tag_$index"] = [
                     "type" => "noul",
-                    "instructions" => self::render_template($settings["question_template"], $values),
-                    "criteria" => [
-                        "true" => self::render_template($settings["true_criteria"], $values),
-                        "false" => self::render_template($settings["false_criteria"], $values),
-                    ],
+                    "instructions" => $rule["question"],
                 ];
             }
 
             $config_hash = hash("sha256", json_encode([
                 $settings["model"],
                 $settings["threshold"],
-                $settings["state_template"],
-                $settings["question_template"],
-                $settings["true_criteria"],
-                $settings["false_criteria"],
                 $rules,
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
@@ -271,54 +240,126 @@ class Jev_Auto_Tag extends Plugin {
         $this->init_database();
         $settings = $this->settings();
         $h = function($value) { return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8"); };
+        $test_script = <<<'JS'
+var form = dijit.byId('jev-auto-tag-form');
+if (!form.validate()) return;
+var values = form.getValues();
+values.method = 'test_api';
+Notify.progress('Testing TypeSafe API key...', true);
+xhr.post('backend.php', values, function(reply) {
+    try {
+        var result = JSON.parse(reply);
+        if (result.ok) {
+            Notify.info(result.message);
+        } else {
+            Notify.error(result.message);
+        }
+    } catch (e) {
+        Notify.error('TypeSafe API returned an invalid test response.');
+    }
+}, function() {
+    Notify.error('TypeSafe API test request failed.');
+});
+JS;
 
         print '<div dojoType="dijit.layout.AccordionPane" title="<i class=\'material-icons\'>label</i> ' . __("Jev Auto Tag Settings") . '">';
-        print '<h2>' . __("TypeSafe API Configuration") . '</h2>';
-        print '<p>' . __("Create a tt-rss filter with the Generate Jev Tags action. Each article is sent at most once, and all tag questions are evaluated in one synchronous request.") . '</p>';
-        print '<form dojoType="dijit.form.Form">';
-        print '<script type="dojo/method" event="onSubmit" args="evt">evt.preventDefault(); if (this.validate()) { xhr.post("backend.php", this.getValues(), (reply) => { Notify.info(reply); }); }</script>';
+        print '<p>' . __("Create a filter with the Generate Jev Tags action. Each article is sent at most once; every configured tag is evaluated as an independent yes/no Noul question in one synchronous request.") . '</p>';
+        print '<form id="jev-auto-tag-form" dojoType="dijit.form.Form">';
+        print '<script type="dojo/method" event="onSubmit" args="evt">evt.preventDefault(); if (this.validate() && JevTagRules.serialize()) { xhr.post("backend.php", this.getValues(), (reply) => { Notify.info(reply); }); }</script>';
         print \Controls\pluginhandler_tags($this, "save");
 
-        print '<div class="form-group"><input dojoType="dijit.form.ValidationTextBox" type="password" required="1" name="typesafe_api_key" style="width:30em" value="' . $h($settings["api_key"]) . '">&nbsp;<label>' . __("API Key") . '</label></div>';
-        print '<div class="form-group"><input dojoType="dijit.form.ValidationTextBox" required="1" name="typesafe_base_url" style="width:30em" value="' . $h($settings["base_url"]) . '">&nbsp;<label>' . __("API Base URL") . '</label></div>';
-        print '<div class="form-group"><input dojoType="dijit.form.ValidationTextBox" required="1" name="jev_model" style="width:20em" value="' . $h($settings["model"]) . '">&nbsp;<label>' . __("Model") . '</label></div>';
-        print '<div class="form-group"><input dojoType="dijit.form.NumberSpinner" required="1" name="tag_threshold" style="width:7em" value="' . $h($settings["threshold"]) . '" min="0" max="1" smallDelta="0.05">&nbsp;<label>' . __("Tag Probability Threshold") . '</label></div>';
-        print '<div class="form-group"><input dojoType="dijit.form.NumberSpinner" required="1" name="max_text_length" style="width:8em" value="' . (int)$settings["max_text_length"] . '" min="500" max="100000">&nbsp;<label>' . __("Max Article Length (Chars)") . '</label></div>';
+        print '<fieldset><legend>' . __("TypeSafe Connection") . '</legend>';
+        print '<div class="form-group"><label for="jev-typesafe-api-key" style="display:block">' . __("API Key") . '</label><input id="jev-typesafe-api-key" dojoType="dijit.form.ValidationTextBox" type="password" required="1" name="typesafe_api_key" style="width:30em" value="' . $h($settings["api_key"]) . '"></div>';
+        print '<div class="form-group"><label for="jev-typesafe-base-url" style="display:block">' . __("API Base URL") . '</label><input id="jev-typesafe-base-url" dojoType="dijit.form.ValidationTextBox" required="1" name="typesafe_base_url" style="width:30em" value="' . $h($settings["base_url"]) . '"></div>';
+        print '<div class="form-group"><label for="jev-model" style="display:block">' . __("Model") . '</label><input id="jev-model" dojoType="dijit.form.ValidationTextBox" required="1" name="jev_model" style="width:20em" value="' . $h($settings["model"]) . '"></div>';
+        print '<button dojoType="dijit.form.Button" type="button" onClick="' . $h($test_script) . '"><i class="material-icons">key</i> ' . __("Test API Key") . '</button>';
+        print '</fieldset>';
 
-        print '<h2>' . __("Tag Questions") . '</h2>';
-        print '<div class="form-group"><label style="display:block">' . __("Tags and Definitions") . '</label>';
-        print '<textarea dojoType="dijit.form.SimpleTextarea" name="tag_rules" style="width:90%;height:10em;font-family:monospace">' . $h($settings["tag_rules"]) . '</textarea>';
-        print '<p class="text-muted">' . __("One tag per line. Optional format: tag | definition. Lines beginning with # are ignored.") . '</p></div>';
+        print '<fieldset><legend>' . __("Tag Decisions") . '</legend>';
+        print '<div class="form-group"><label for="jev-tag-threshold" style="display:block">' . __("Tag Probability Threshold") . '</label><input id="jev-tag-threshold" dojoType="dijit.form.NumberSpinner" required="1" name="tag_threshold" style="width:7em" value="' . $h($settings["threshold"]) . '" min="0" max="1" smallDelta="0.05"></div>';
+        print '<p class="text-muted">' . __("A tag is added when its Noul yes-probability meets this threshold.") . '</p>';
+        print '<div class="form-group"><h3>' . __("Tag Rules") . '</h3>';
+        print '<p>' . __("For each rule, enter the exact tag tt-rss should apply and the focused yes/no question Jev should answer.") . '</p>';
+        print '<input type="hidden" id="jev-tag-rules-value" name="tag_rules" value="' . $h($settings["tag_rules"]) . '">';
+        print '<div id="jev-tag-rule-list">';
+        $rules = self::parse_tag_rules($settings["tag_rules"]);
+        if (!$rules) $rules = [["tag" => "", "question" => ""]];
+        foreach ($rules as $index => $rule) {
+            print '<div class="jev-tag-rule">';
+            print '<label for="jev-tag-name-' . $index . '"><span>' . __("Tag name") . '</span><input id="jev-tag-name-' . $index . '" type="text" class="jev-tag-rule-name" placeholder="technology" value="' . $h($rule["tag"]) . '"></label>';
+            print '<label for="jev-tag-question-' . $index . '"><span>' . __("Yes/no question") . '</span><input id="jev-tag-question-' . $index . '" type="text" class="jev-tag-rule-question" placeholder="Is this article primarily about technology?" value="' . $h($rule["question"]) . '"></label>';
+            print '<button type="button" class="jev-tag-rule-remove" title="' . __("Remove tag rule") . '" aria-label="' . __("Remove tag rule") . '" onclick="JevTagRules.remove(this.parentNode)"><i class="material-icons">close</i></button>';
+            print '</div>';
+        }
+        print '</div>';
+        print '<button type="button" class="alt-primary" onclick="JevTagRules.add()"><i class="material-icons">add</i> ' . __("Add Tag Rule") . '</button></div>';
+        print '</fieldset>';
 
-        print '<div class="form-group"><label style="display:block">' . __("State Template") . '</label>';
-        print '<textarea dojoType="dijit.form.SimpleTextarea" name="state_template" style="width:90%;height:8em;font-family:monospace">' . $h($settings["state_template"]) . '</textarea>';
-        print '<p class="text-muted">' . __("Available placeholders: {title}, {content}") . '</p></div>';
-
-        print '<div class="form-group"><label style="display:block">' . __("Question Template") . '</label>';
-        print '<textarea dojoType="dijit.form.SimpleTextarea" name="question_template" style="width:90%;height:6em;font-family:monospace">' . $h($settings["question_template"]) . '</textarea></div>';
-        print '<div class="form-group"><label style="display:block">' . __("Positive Criteria Template") . '</label>';
-        print '<textarea dojoType="dijit.form.SimpleTextarea" name="true_criteria" style="width:90%;height:6em;font-family:monospace">' . $h($settings["true_criteria"]) . '</textarea></div>';
-        print '<div class="form-group"><label style="display:block">' . __("Negative Criteria Template") . '</label>';
-        print '<textarea dojoType="dijit.form.SimpleTextarea" name="false_criteria" style="width:90%;height:6em;font-family:monospace">' . $h($settings["false_criteria"]) . '</textarea>';
-        print '<p class="text-muted">' . __("Question and criteria placeholders: {tag}, {description}") . '</p></div>';
+        print '<fieldset><legend>' . __("Article Input") . '</legend>';
+        print '<div class="form-group"><label for="jev-max-text-length" style="display:block">' . __("Article Text Limit (Chars)") . '</label><input id="jev-max-text-length" dojoType="dijit.form.NumberSpinner" required="1" name="max_text_length" style="width:8em" value="' . (int)$settings["max_text_length"] . '" min="100" max="5000"></div>';
+        print '<p class="text-muted">' . __("HTML is removed before the first N characters are selected. The title and plain-text content are sent as separate structured fields. The default is 400 characters.") . '</p>';
+        print '</fieldset>';
 
         print '<button dojoType="dijit.form.Button" type="submit" class="alt-primary">' . __("Save") . '</button>';
         print '</form></div>';
     }
 
+    function test_api() {
+        try {
+            $settings = [
+                "api_key" => trim($_POST["typesafe_api_key"] ?? ""),
+                "base_url" => rtrim(trim($_POST["typesafe_base_url"] ?? self::DEFAULT_BASE_URL), "/"),
+                "model" => trim($_POST["jev_model"] ?? self::DEFAULT_MODEL),
+            ];
+            if ($settings["api_key"] === "" || $settings["base_url"] === "" || $settings["model"] === "") {
+                throw new RuntimeException("API key, base URL, and model are required.");
+            }
+
+            $response = self::call_api($settings, "This is a TypeSafe API connectivity test.", [
+                "connectivity_test" => [
+                    "type" => "noul",
+                    "instructions" => "Is this state an API connectivity test?",
+                ],
+            ]);
+            $answer = $response["answers"]["connectivity_test"] ?? null;
+            if (!is_array($answer) || ($answer["type"] ?? null) !== "noul" || !is_numeric($answer["noul"] ?? null)) {
+                throw new RuntimeException("API returned an invalid Noul answer.");
+            }
+
+            echo json_encode([
+                "ok" => true,
+                "message" => "TypeSafe API key works. Model: " . ($response["model"] ?? $settings["model"]),
+            ], JSON_UNESCAPED_SLASHES);
+        } catch (Throwable $e) {
+            echo json_encode([
+                "ok" => false,
+                "message" => "TypeSafe API test failed: " . $e->getMessage(),
+            ], JSON_UNESCAPED_SLASHES);
+        }
+    }
+
     function save() {
         $this->init_database();
+
+        $tag_rules = trim($_POST["tag_rules"] ?? "");
+        $active_lines = array_values(array_filter(
+            preg_split('/\R/u', $tag_rules),
+            function($line) {
+                $line = trim($line);
+                return $line !== "" && !str_starts_with($line, "#");
+            }
+        ));
+        if (!$active_lines || count(self::parse_tag_rules($tag_rules)) !== count($active_lines)) {
+            echo __("Settings not saved. Add at least one unique tag and a yes/no question for every active line.");
+            return;
+        }
 
         $this->host->set($this, "typesafe_api_key", trim($_POST["typesafe_api_key"] ?? ""));
         $this->host->set($this, "typesafe_base_url", rtrim(trim($_POST["typesafe_base_url"] ?? self::DEFAULT_BASE_URL), "/"));
         $this->host->set($this, "jev_model", trim($_POST["jev_model"] ?? self::DEFAULT_MODEL));
         $this->host->set($this, "tag_threshold", max(0.0, min(1.0, (float)($_POST["tag_threshold"] ?? self::DEFAULT_THRESHOLD))));
-        $this->host->set($this, "max_text_length", max(500, min(100000, (int)($_POST["max_text_length"] ?? self::DEFAULT_MAX_TEXT_LENGTH))));
-        $this->host->set($this, "tag_rules", trim($_POST["tag_rules"] ?? ""));
-        $this->host->set($this, "state_template", trim($_POST["state_template"] ?? "") ?: self::default_state_template());
-        $this->host->set($this, "question_template", trim($_POST["question_template"] ?? "") ?: self::default_question_template());
-        $this->host->set($this, "true_criteria", trim($_POST["true_criteria"] ?? "") ?: self::default_true_criteria());
-        $this->host->set($this, "false_criteria", trim($_POST["false_criteria"] ?? "") ?: self::default_false_criteria());
+        $this->host->set($this, "max_text_length", max(100, min(5000, (int)($_POST["max_text_length"] ?? self::DEFAULT_MAX_TEXT_LENGTH))));
+        $this->host->set($this, "tag_rules", $tag_rules);
 
         echo __("Settings saved.");
     }
