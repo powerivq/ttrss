@@ -6,11 +6,16 @@ ENV CI_COMMIT_SHORT_SHA=1
 ENV CI_COMMIT_TIMESTAMP=1
 ENV TTRSS_AUTO_SUMMARY_WORKERS=1
 
-RUN apk add --update --no-cache --virtual .build-deps curl-dev gmp-dev libxml2-dev pcre-dev \
-    && apk add --update --no-cache gmp bzip2-dev freetype-dev gettext-dev icu-dev libjpeg-turbo-dev libpng-dev oniguruma-dev postgresql-dev supervisor \
+RUN apk add --no-cache supervisor \
+    && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
+        bzip2-dev freetype-dev gettext-dev gmp-dev icu-dev libjpeg-turbo-dev libpng-dev postgresql-dev \
     && docker-php-ext-configure gd --with-freetype=/usr/include/ --with-jpeg=/usr/include \
-    && docker-php-ext-configure pdo_pgsql \
-    && docker-php-ext-install bz2 curl dom gd gmp gettext mbstring opcache intl opcache pcntl pdo pdo_pgsql posix xml \
+    && docker-php-ext-install -j"$(nproc)" bz2 gd gmp gettext intl pcntl pdo_pgsql \
+    && run_deps="$(scanelf --needed --nobanner --format '%n#p' --recursive /usr/local/lib/php/extensions \
+        | tr ',' '\n' \
+        | sort -u \
+        | awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }')" \
+    && apk add --no-cache --virtual .php-ext-runtime-deps $run_deps \
     && apk del --no-cache .build-deps
 
 COPY php-custom.ini /usr/local/etc/php/conf.d/
