@@ -130,3 +130,8 @@
 .jev-feed-options[hidden] {
     display: none;
 }
+
+.jev-feed-status {
+    opacity: 0.7;
+    white-space: nowrap;
+}

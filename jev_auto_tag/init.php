@@ -10,7 +10,7 @@ class Jev_Auto_Tag extends Plugin {
     private bool $database_initialized = false;
 
     function about() {
-        return [1.3, "Assign labels, rank articles, and mark them read using TypeSafe Jev", "powerivq"];
+        return [1.5, "Process feed articles with TypeSafe Jev in the background", "powerivq"];
     }
 
     function api_version() {
@@ -26,13 +26,14 @@ class Jev_Auto_Tag extends Plugin {
     }
 
     function init($host) {
+        require_once __DIR__ . "/processor.php";
         $this->host = $host;
 
         if ($host->get_pdo()->getAttribute(PDO::ATTR_DRIVER_NAME) !== "pgsql") {
             user_error("Jev_Auto_Tag: Only PostgreSQL is supported", E_USER_ERROR);
         }
 
-        $host->add_filter_action($this, "jev_auto_tag", __("Apply Jev Article Decisions"));
+        $host->add_hook($host::HOOK_ARTICLE_FILTER, $this);
         $host->add_hook($host::HOOK_PREFS_TAB, $this);
     }
 
@@ -90,287 +91,44 @@ class Jev_Auto_Tag extends Plugin {
         ));
     }
 
-    private function feed_settings($feed_id, $owner_uid) {
-        $defaults = [
-            "rank_enabled" => false,
-            "rank_question" => "",
-            "rank_levels" => self::default_rank_levels(),
-            "auto_read_enabled" => false,
-            "auto_read_question" => "",
-            "auto_read_threshold" => self::DEFAULT_AUTO_READ_THRESHOLD,
-        ];
-        if (!$feed_id) return $defaults;
-
-        $sth = $this->host->get_pdo()->prepare(
-            "SELECT rank_enabled, rank_question, rank_levels, auto_read_enabled, " .
-            "auto_read_question, auto_read_threshold FROM ttrss_jev_feed_settings " .
-            "WHERE feed_id = ? AND owner_uid = ?"
-        );
-        $sth->execute([$feed_id, $owner_uid]);
-        $row = $sth->fetch(PDO::FETCH_ASSOC);
-        if (!$row) return $defaults;
-
-        return [
-            "rank_enabled" => filter_var($row["rank_enabled"], FILTER_VALIDATE_BOOLEAN),
-            "rank_question" => trim((string)$row["rank_question"]),
-            "rank_levels" => trim((string)$row["rank_levels"]),
-            "auto_read_enabled" => filter_var($row["auto_read_enabled"], FILTER_VALIDATE_BOOLEAN),
-            "auto_read_question" => trim((string)$row["auto_read_question"]),
-            "auto_read_threshold" => max(0.0, min(1.0, (float)$row["auto_read_threshold"])),
-        ];
-    }
-
-    private static function score_to_modifier($score, $level_count) {
-        if ($level_count < 2) throw new InvalidArgumentException("A score rubric needs at least two levels");
-        $normalized = max(0.0, min(1.0, (float)$score / ($level_count - 1)));
-        return (int)round($normalized * 1000);
-    }
-
-    private static function article_text($content, $max_length) {
-        $content = str_replace(["<br>", "<br/>", "<br />", "</p>"], "\n", (string)$content);
-        $content = html_entity_decode(strip_tags($content), ENT_QUOTES | ENT_HTML5, "UTF-8");
-        return trim(mb_substr($content, 0, $max_length));
-    }
-
-    private function claim_attempt($guid, $owner_uid, $model, $config_hash) {
-        $sth = $this->host->get_pdo()->prepare(
-            "INSERT INTO ttrss_jev_label_attempts (guid, owner_uid, model, config_hash) " .
-            "VALUES (?, ?, ?, ?) ON CONFLICT (guid, owner_uid) DO NOTHING RETURNING guid"
-        );
-        $sth->execute([$guid, $owner_uid, $model, $config_hash]);
-        return (bool)$sth->fetchColumn();
-    }
-
-    private function finish_attempt($guid, $owner_uid, $status, $selected_labels = [], $error = null) {
-        $sth = $this->host->get_pdo()->prepare(
-            "UPDATE ttrss_jev_label_attempts SET completed_at = NOW(), status = ?, selected_labels = ?, error = ? " .
-            "WHERE guid = ? AND owner_uid = ?"
-        );
-        $sth->execute([
-            $status,
-            json_encode(array_values($selected_labels), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            $error === null ? null : mb_substr($error, 0, 2000),
-            $guid,
-            $owner_uid,
-        ]);
-    }
-
-    private static function response_error($decoded, $http_code) {
-        foreach (["detail", "message", "error"] as $key) {
-            if (!isset($decoded[$key])) continue;
-            if (is_string($decoded[$key])) return $decoded[$key];
-            $encoded = json_encode($decoded[$key], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            if ($encoded !== false) return $encoded;
-        }
-        return "HTTP $http_code";
-    }
-
-    private static function call_api($settings, $state, $questions) {
-        $url = str_ends_with($settings["base_url"], "/systemone")
-            ? $settings["base_url"]
-            : $settings["base_url"] . "/systemone";
-        $payload = [
-            "state" => $state,
-            "model" => $settings["model"],
-            "questions" => $questions,
-        ];
-        $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $body,
-            CURLOPT_HTTPHEADER => [
-                "Authorization: Bearer " . $settings["api_key"],
-                "Content-Type: application/json",
-            ],
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_TIMEOUT => 180,
-        ]);
-
-        $response = curl_exec($ch);
-        $curl_error = curl_error($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($response === false) throw new RuntimeException("Connection error: $curl_error");
-
-        $decoded = json_decode($response, true);
-        if (!is_array($decoded)) throw new RuntimeException("API returned invalid JSON");
-        if ($http_code !== 200) throw new RuntimeException(self::response_error($decoded, $http_code));
-        if (!isset($decoded["answers"]) || !is_array($decoded["answers"])) {
-            throw new RuntimeException("API response contained no answers");
-        }
-
-        return $decoded;
-    }
-
-    private static function merge_labels($existing_labels, $selected_label_ids, $label_definitions) {
-        $labels = array_values((array)$existing_labels);
-        $seen = [];
-        foreach ($labels as $label) {
-            if (is_array($label) && isset($label[1])) $seen[mb_strtolower((string)$label[1])] = true;
-        }
-
-        foreach ($selected_label_ids as $label_id) {
-            $definition = $label_definitions[$label_id] ?? null;
-            if (!$definition) throw new RuntimeException("Configured label ID $label_id no longer exists");
-
-            $key = mb_strtolower($definition["caption"]);
-            if (isset($seen[$key])) continue;
-
-            $labels[] = [
-                Labels::label_to_feed_id($label_id),
-                $definition["caption"],
-                $definition["fg_color"],
-                $definition["bg_color"],
-            ];
-            $seen[$key] = true;
-        }
-        return $labels;
-    }
-
-    function hook_article_filter_action($article, $action) {
-        if ($action !== "jev_auto_tag") return $article;
-
+    function hook_article_filter($article) {
         $guid = $article["guid_hashed"] ?? null;
-        $owner_uid = $article["owner_uid"] ?? null;
-        if (!$guid || !$owner_uid) return $article;
+        $owner_uid = (int)($article["owner_uid"] ?? 0);
+        $feed_id = (int)($article["feed"]["id"] ?? 0);
+        if (!$guid || !$owner_uid || !$feed_id) return $article;
 
         try {
             $this->init_database();
-            $settings = $this->settings();
-            $rules = self::parse_label_rules($settings["label_rules"]);
-            $label_definitions = Labels::get_as_hash((int)$owner_uid);
-            $feed_id = (int)($article["feed"]["id"] ?? 0);
-            $feed_settings = $this->feed_settings($feed_id, (int)$owner_uid);
-            $rank_levels = self::parse_rank_levels($feed_settings["rank_levels"]);
-            $content = self::article_text($article["content"] ?? "", $settings["max_text_length"]);
-
-            if ($settings["api_key"] === "" || $settings["base_url"] === "" || $settings["model"] === "") {
-                throw new RuntimeException("API configuration is incomplete");
-            }
-            if (!$rules) throw new RuntimeException("No label rules are configured");
-            foreach ($rules as $rule) {
-                if (!isset($label_definitions[$rule["label_id"]])) {
-                    throw new RuntimeException("Configured label ID " . $rule["label_id"] . " no longer exists");
-                }
-            }
-            if ($feed_settings["rank_enabled"] &&
-                    ($feed_settings["rank_question"] === "" || count($rank_levels) < 2 || count($rank_levels) > 10)) {
-                throw new RuntimeException("Feed $feed_id has an invalid ranking rule");
-            }
-            if ($feed_settings["auto_read_enabled"] && $feed_settings["auto_read_question"] === "") {
-                throw new RuntimeException("Feed $feed_id has an invalid auto-read rule");
-            }
-            if ($content === "") throw new RuntimeException("Article content is empty");
-
-            $state = [
-                "title" => (string)($article["title"] ?? ""),
-                "content" => $content,
-            ];
-            $questions = [];
-            foreach ($rules as $index => $rule) {
-                $questions["label_$index"] = [
-                    "type" => "noul",
-                    "instructions" => $rule["question"],
-                ];
-            }
-            if ($feed_settings["rank_enabled"]) {
-                $questions["article_rank"] = [
-                    "type" => "score",
-                    "instructions" => $feed_settings["rank_question"],
-                    "criteria" => $rank_levels,
-                ];
-            }
-            if ($feed_settings["auto_read_enabled"]) {
-                $questions["auto_read"] = [
-                    "type" => "noul",
-                    "instructions" => $feed_settings["auto_read_question"],
-                ];
-            }
-
-            $config_hash = hash("sha256", json_encode([
-                $settings["model"],
-                $settings["threshold"],
-                $rules,
-                $feed_settings,
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-
-            if (!$this->claim_attempt($guid, $owner_uid, $settings["model"], $config_hash)) {
-                error_log("Jev_Auto_Tag: Skipping previously attempted guid=$guid for user $owner_uid");
-                return $article;
-            }
-
-            try {
-                error_log("Jev_Auto_Tag: Calling {$settings['model']} for guid=$guid with " . count($questions) . " questions");
-                $response = self::call_api($settings, $state, $questions);
-                $selected_label_ids = [];
-
-                foreach ($rules as $index => $rule) {
-                    $answer = $response["answers"]["label_$index"] ?? null;
-                    if (!is_array($answer) || ($answer["type"] ?? null) !== "noul" || !is_numeric($answer["noul"] ?? null)) {
-                        $caption = $label_definitions[$rule["label_id"]]["caption"];
-                        throw new RuntimeException("API response omitted a valid answer for label '$caption'");
-                    }
-                    if ((float)$answer["noul"] >= $settings["threshold"]) {
-                        $selected_label_ids[] = $rule["label_id"];
-                    }
-                }
-
-                $rank_score = null;
-                if ($feed_settings["rank_enabled"]) {
-                    $answer = $response["answers"]["article_rank"] ?? null;
-                    if (!is_array($answer) || ($answer["type"] ?? null) !== "score" || !is_numeric($answer["score"] ?? null)) {
-                        throw new RuntimeException("API response omitted a valid article ranking score");
-                    }
-                    $rank_score = self::score_to_modifier($answer["score"], count($rank_levels));
-                }
-
-                $auto_read_probability = null;
-                if ($feed_settings["auto_read_enabled"]) {
-                    $answer = $response["answers"]["auto_read"] ?? null;
-                    if (!is_array($answer) || ($answer["type"] ?? null) !== "noul" || !is_numeric($answer["noul"] ?? null)) {
-                        throw new RuntimeException("API response omitted a valid auto-read answer");
-                    }
-                    $auto_read_probability = (float)$answer["noul"];
-                }
-
-                $selected_labels = array_map(
-                    fn($label_id) => $label_definitions[$label_id]["caption"],
-                    $selected_label_ids
+            $pdo = $this->host->get_pdo();
+            $enabled = $pdo->prepare(
+                "SELECT rank_enabled FROM ttrss_jev_feed_settings WHERE owner_uid = ? AND feed_id = ? " .
+                "AND (label_enabled OR rank_enabled OR auto_read_enabled)"
+            );
+            $enabled->execute([$owner_uid, $feed_id]);
+            $feed_settings = $enabled->fetch(PDO::FETCH_ASSOC);
+            if ($feed_settings) {
+                $previous = $pdo->prepare(
+                    "SELECT score_modifier FROM ttrss_jev_label_attempts " .
+                    "WHERE guid = ? AND owner_uid = ? AND status = 'success'"
                 );
-                $article["labels"] = self::merge_labels(
-                    $article["labels"] ?? [],
-                    $selected_label_ids,
-                    $label_definitions
-                );
-                if ($rank_score !== null) {
-                    $article["score_modifier"] = (int)($article["score_modifier"] ?? 0) + $rank_score;
+                $previous->execute([$guid, $owner_uid]);
+                $cached = $previous->fetch(PDO::FETCH_ASSOC);
+                if ($cached) {
+                    if (filter_var($feed_settings["rank_enabled"], FILTER_VALIDATE_BOOLEAN) && $cached["score_modifier"] !== null) {
+                        $article["score_modifier"] = (int)($article["score_modifier"] ?? 0) + (int)$cached["score_modifier"];
+                    }
+                    return $article;
                 }
-                if ($auto_read_probability !== null &&
-                        $auto_read_probability >= $feed_settings["auto_read_threshold"]) {
-                    $article["force_catchup"] = true;
-                }
-
-                $this->finish_attempt($guid, $owner_uid, "success", $selected_labels);
-                $rank_log = $rank_score === null ? "off" : (string)$rank_score;
-                $read_log = $auto_read_probability === null
-                    ? "off"
-                    : sprintf("%.3f%s", $auto_read_probability, ($article["force_catchup"] ?? false) ? " (read)" : "");
-                error_log(
-                    "Jev_Auto_Tag: guid=$guid labels=[" . implode(", ", $selected_labels) .
-                    "] score=$rank_log auto_read=$read_log"
+                $queue = $pdo->prepare(
+                    "INSERT INTO ttrss_jev_queue (guid, owner_uid, feed_id, available_at) " .
+                    "VALUES (?, ?, ?, NOW() + INTERVAL '30 seconds') " .
+                    "ON CONFLICT (guid, owner_uid) DO NOTHING"
                 );
-            } catch (Throwable $e) {
-                $this->finish_attempt($guid, $owner_uid, "failed", [], $e->getMessage());
-                error_log("Jev_Auto_Tag: Call failed for guid=$guid: " . $e->getMessage());
+                $queue->execute([$guid, $owner_uid, $feed_id]);
             }
         } catch (Throwable $e) {
-            error_log("Jev_Auto_Tag: Unable to process guid=$guid: " . $e->getMessage());
+            error_log("Jev_Auto_Tag: Unable to queue guid=$guid: " . $e->getMessage());
         }
-
         return $article;
     }
 
@@ -381,7 +139,7 @@ class Jev_Auto_Tag extends Plugin {
         $settings = $this->settings();
         $owner_uid = (int)$_SESSION["uid"];
         $sth = $this->host->get_pdo()->prepare(
-            "SELECT f.id, f.title, s.rank_enabled, s.rank_question, s.rank_levels, " .
+            "SELECT f.id, f.title, s.label_enabled, s.rank_enabled, s.rank_question, s.rank_levels, " .
             "s.auto_read_enabled, s.auto_read_question, s.auto_read_threshold " .
             "FROM ttrss_feeds f LEFT JOIN ttrss_jev_feed_settings s " .
             "ON s.feed_id = f.id AND s.owner_uid = f.owner_uid " .
@@ -390,6 +148,7 @@ class Jev_Auto_Tag extends Plugin {
         $sth->execute([$owner_uid]);
         $feeds = $sth->fetchAll(PDO::FETCH_ASSOC);
         foreach ($feeds as &$feed) {
+            $feed["label_enabled"] = filter_var($feed["label_enabled"] ?? false, FILTER_VALIDATE_BOOLEAN);
             $feed["rank_enabled"] = filter_var($feed["rank_enabled"] ?? false, FILTER_VALIDATE_BOOLEAN);
             $feed["rank_question"] = trim((string)($feed["rank_question"] ?? ""));
             $feed["rank_levels"] = trim((string)($feed["rank_levels"] ?? "")) ?: self::default_rank_levels();
@@ -425,9 +184,9 @@ xhr.post('backend.php', values, function(reply) {
 JS;
 
         print '<div dojoType="dijit.layout.AccordionPane" title="<i class=\'material-icons\'>tune</i> ' . __("Jev Article Automation") . '">';
-        print '<p>' . __("Create a filter with the Apply Jev Article Decisions action. Matching articles are sent at most once. Label, ranking, and auto-read decisions are evaluated together in one synchronous request.") . '</p>';
+        print '<p>' . __("Enable the Jev decisions you want for each feed. No tt-rss filter is needed. New and updated articles are processed in the background, with all enabled questions sent in one request.") . '</p>';
         print '<form id="jev-auto-tag-form" dojoType="dijit.form.Form">';
-        print '<script type="dojo/method" event="onSubmit" args="evt">evt.preventDefault(); var labelRules = JevLabelRules.serialize(); if (this.validate() && labelRules !== false) { var values = this.getValues(); values.label_rules = labelRules; xhr.post("backend.php", values, (reply) => { Notify.info(reply); }); }</script>';
+        print '<script type="dojo/method" event="onSubmit" args="evt">evt.preventDefault(); var values = this.getValues(); var labelsEnabled = Object.keys(values).some((name) => /^feed_label_enabled_\d+$/.test(name) && values[name]); var labelRules = JevLabelRules.serialize(labelsEnabled); if (this.validate() && labelRules !== false) { values.label_rules = labelRules; xhr.post("backend.php", values, (reply) => { Notify.info(reply); }); }</script>';
         print \Controls\pluginhandler_tags($this, "save");
 
         print '<fieldset><legend>' . __("TypeSafe Connection") . '</legend>';
@@ -441,7 +200,7 @@ JS;
         print '<div class="form-group"><label for="jev-label-threshold" style="display:block">' . __("Label Probability Threshold") . '</label><input id="jev-label-threshold" dojoType="dijit.form.NumberSpinner" required="1" name="label_threshold" style="width:7em" value="' . $h($settings["threshold"]) . '" min="0" max="1" smallDelta="0.05"></div>';
         print '<p class="text-muted">' . __("A label is applied when its Noul yes-probability meets this threshold. Deleted labels must be replaced before settings can be saved.") . '</p>';
         print '<div class="form-group"><h3>' . __("Label Rules") . '</h3>';
-        print '<p>' . __("Choose an existing tt-rss label, then enter the focused yes/no question Jev should answer. Create and color labels under Preferences > Labels.") . '</p>';
+        print '<p>' . __("Optional: choose an existing tt-rss label, then enter the focused yes/no question Jev should answer. Label rules are not required for ranking or auto-read. Create and color labels under Preferences > Labels.") . '</p>';
         $available_labels = Labels::get_all((int)$_SESSION["uid"]);
         print '<select id="jev-available-labels" hidden aria-hidden="true">';
         foreach ($available_labels as $label) {
@@ -477,19 +236,31 @@ JS;
         print '</fieldset>';
 
         print '<fieldset><legend>' . __("Per-feed Decisions") . '</legend>';
-        print '<p>' . __("Ranking and auto-read are optional and independent for each feed. They run only when that article matches a filter using the Apply Jev Article Decisions action.") . '</p>';
+        print '<p>' . __("Enable labeling, ranking, and auto-read independently for each feed. Expand a feed to configure its decisions.") . '</p>';
         print '<div class="jev-feed-list">';
         if (!$feeds) print '<p class="text-muted">' . __("No feeds are available.") . '</p>';
         foreach ($feeds as $feed) {
             $id = (int)$feed["id"];
+            $label_checked = $feed["label_enabled"] ? " checked" : "";
             $rank_checked = $feed["rank_enabled"] ? " checked" : "";
             $read_checked = $feed["auto_read_enabled"] ? " checked" : "";
             $rank_hidden = $feed["rank_enabled"] ? "" : " hidden";
             $read_hidden = $feed["auto_read_enabled"] ? "" : " hidden";
             print '<details class="jev-feed-rule">';
-            print '<summary><i class="material-icons">rss_feed</i><strong>' . $h($feed["title"]) . '</strong></summary>';
+            $enabled_decisions = [];
+            if ($feed["label_enabled"]) $enabled_decisions[] = __("Labels");
+            if ($feed["rank_enabled"]) $enabled_decisions[] = __("Score");
+            if ($feed["auto_read_enabled"]) $enabled_decisions[] = __("Auto-read");
+            print '<summary><i class="material-icons">rss_feed</i><strong>' . $h($feed["title"]) . '</strong>';
+            if ($enabled_decisions) print '<span class="jev-feed-status">' . $h(implode(" / ", $enabled_decisions)) . '</span>';
+            print '</summary>';
             print '<div class="jev-feed-rule-body">';
             print '<input dojoType="dijit.form.TextBox" type="hidden" name="feed_ids[]" value="' . $id . '">';
+
+            print '<section class="jev-feed-decision">';
+            print '<h4>' . __("Article Labels") . '</h4>';
+            print '<label><input dojoType="dijit.form.CheckBox" type="checkbox" name="feed_label_enabled_' . $id . '" value="1"' . $label_checked . '> ' . __("Apply the label questions above to this feed") . '</label>';
+            print '</section>';
 
             print '<section class="jev-feed-decision">';
             print '<h4>' . __("Article Ranking") . '</h4>';
@@ -535,7 +306,7 @@ JS;
                 throw new RuntimeException("API key, base URL, and model are required.");
             }
 
-            $response = self::call_api($settings, "This is a TypeSafe API connectivity test.", [
+            $response = JevProcessor::call_api($settings, "This is a TypeSafe API connectivity test.", [
                 "connectivity_test" => [
                     "type" => "noul",
                     "instructions" => "Is this state an API connectivity test?",
@@ -575,8 +346,8 @@ JS;
             $parsed_rules,
             fn($rule) => isset($available_labels[$rule["label_id"]])
         );
-        if (!$active_lines || count($parsed_rules) !== count($active_lines) || !$labels_are_valid) {
-            echo __("Settings not saved. Choose one existing, unique label and enter a yes/no question for every active line.");
+        if ($active_lines && (count($parsed_rules) !== count($active_lines) || !$labels_are_valid)) {
+            echo __("Settings not saved. Choose an existing, unique label and a yes/no question for every active label rule.");
             return;
         }
 
@@ -593,6 +364,11 @@ JS;
             $owns_feed->execute([$feed_id, $owner_uid]);
             if (!$owns_feed->fetchColumn()) continue;
 
+            $label_enabled = isset($_POST["feed_label_enabled_$feed_id"]);
+            if ($label_enabled && !$parsed_rules) {
+                echo __("Settings not saved. Add at least one label rule for feeds with labeling enabled.");
+                return;
+            }
             $rank_enabled = isset($_POST["feed_rank_enabled_$feed_id"]);
             $rank_question = trim($_POST["feed_rank_question_$feed_id"] ?? "");
             $rank_levels_text = trim($_POST["feed_rank_levels_$feed_id"] ?? "");
@@ -615,6 +391,7 @@ JS;
             $feed_configs[] = [
                 $owner_uid,
                 $feed_id,
+                $label_enabled ? "true" : "false",
                 $rank_enabled ? "true" : "false",
                 $rank_question,
                 $rank_levels_text,
@@ -633,10 +410,11 @@ JS;
 
         $upsert = $pdo->prepare(
             "INSERT INTO ttrss_jev_feed_settings " .
-            "(owner_uid, feed_id, rank_enabled, rank_question, rank_levels, " .
+            "(owner_uid, feed_id, label_enabled, rank_enabled, rank_question, rank_levels, " .
             "auto_read_enabled, auto_read_question, auto_read_threshold) " .
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (owner_uid, feed_id) DO UPDATE SET " .
-            "rank_enabled = EXCLUDED.rank_enabled, rank_question = EXCLUDED.rank_question, " .
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (owner_uid, feed_id) DO UPDATE SET " .
+            "label_enabled = EXCLUDED.label_enabled, rank_enabled = EXCLUDED.rank_enabled, " .
+            "rank_question = EXCLUDED.rank_question, " .
             "rank_levels = EXCLUDED.rank_levels, auto_read_enabled = EXCLUDED.auto_read_enabled, " .
             "auto_read_question = EXCLUDED.auto_read_question, " .
             "auto_read_threshold = EXCLUDED.auto_read_threshold"

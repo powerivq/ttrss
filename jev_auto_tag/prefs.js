@@ -54,7 +54,7 @@ window.JevLabelRules = {
         if (container && !container.querySelector('.jev-label-rule')) this.add();
     },
 
-    serialize() {
+    serialize(labelsEnabled = true) {
         const rows = document.querySelectorAll('#jev-label-rule-list .jev-label-rule');
         const rules = [];
         const seen = new Set();
@@ -64,20 +64,17 @@ window.JevLabelRules = {
             const question = row.querySelector('.jev-label-rule-question').value.trim();
             if (!labelId && !question) continue;
             if (!labelId || !question) {
+                if (!labelsEnabled) continue;
                 Notify.error('Every label rule needs both a selected label and a yes/no question.');
                 return false;
             }
             if (seen.has(labelId)) {
+                if (!labelsEnabled) continue;
                 Notify.error('Each label can only be used once.');
                 return false;
             }
             seen.add(labelId);
             rules.push(`${labelId} | ${question}`);
-        }
-
-        if (!rules.length) {
-            Notify.error('Add at least one label rule.');
-            return false;
         }
 
         return rules.join('\n');
